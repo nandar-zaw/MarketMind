@@ -2,7 +2,7 @@
 
 MarketMind uses a simple multi-agent design that is easy to explain in class.
 
-## High-Level Diagram
+## High-Level Diagram (ASCII)
 
 ```text
                 User
@@ -27,6 +27,34 @@ Technical     Sentiment    Fundamental
                   v
          Final Recommendation
 ```
+
+## Architecture (classroom-simple)
+
+This Mermaid diagram shows the same flow more clearly, including how the
+**DataAgent** supplies data to the analysis agents:
+
+```mermaid
+flowchart TD
+    User --> FastAPI
+    FastAPI --> Coordinator
+    Coordinator --> DataAgent
+    Coordinator --> TechnicalAgent
+    Coordinator --> SentimentAgent
+    Coordinator --> FundamentalAgent
+    DataAgent -.->|supplies data| TechnicalAgent
+    DataAgent -.->|supplies data| SentimentAgent
+    DataAgent -.->|supplies data| FundamentalAgent
+    TechnicalAgent --> RiskAgent
+    SentimentAgent --> RiskAgent
+    FundamentalAgent --> RiskAgent
+    RiskAgent --> FinalRec[Final Recommendation]
+```
+
+**How to read it:**
+
+- Solid arrows = main control flow (User → FastAPI → Coordinator → agents → Risk → final recommendation)
+- Dashed arrows labeled "supplies data" = DataAgent feeds price/company data into Technical, Sentiment, and Fundamental agents
+- RiskAgent reviews the specialized agent outputs before the final recommendation
 
 ## Data Agent Role
 
