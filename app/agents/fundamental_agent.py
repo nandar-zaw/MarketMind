@@ -19,7 +19,7 @@ import re
 
 from dotenv import load_dotenv
 
-from agents import Agent, Runner, trace, FileSearchTool
+from agents import Agent, ModelSettings, Runner, trace, FileSearchTool
 
 from app.agents.base_agent import BaseAgent
 from app.models.schemas import AgentResult
@@ -51,6 +51,21 @@ _INSTRUCTIONS = (
 _BUY_THRESHOLD = 0.33
 _SELL_THRESHOLD = -0.33
 
+# File-search citations sometimes leak into the model's raw text as
+# markers like "【filecite】turn1file2" (visible as stray tokens). Strip
+# them so explanations stay clean in the UI and in stored results.
+_CITATION_RE = re.compile(
+    r"【[^】]*】"  # bracketed citation block
+    r"|[\ufffd\ue000-\uf8ff]"  # replacement / private-use glyphs
+    r"|filecite"
+    r"|turn\d+file\d+"
+)
+
+
+def _sanitize(text: str) -> str:
+    cleaned = _CITATION_RE.sub("", text)
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
 
 def _build_agent() -> Agent:
     """Build the underlying SDK agent. Fails fast with a clear message if the
@@ -66,11 +81,14 @@ def _build_agent() -> Agent:
         name="Fundamental Analyst",
         instructions=_INSTRUCTIONS,
         tools=[FileSearchTool(vector_store_ids=[vector_store_id])],
+        # Low temperature: keep scores steadier across runs (demo stability).
+        model_settings=ModelSettings(temperature=0.3),
     )
 
 
 def _parse_output(text: str) -> tuple[float, list[str], str]:
     """Parse the agent's structured text into (score, evidence, verdict)."""
+    text = _sanitize(text)
     score_match = re.search(r"^SCORE:\s*([-+]?\d*\.?\d+)", text, re.MULTILINE)
     score = float(score_match.group(1)) if score_match else 0.0
     score = max(-1.0, min(1.0, score))  # clamp to [-1, 1]
