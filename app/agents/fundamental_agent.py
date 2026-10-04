@@ -19,7 +19,7 @@ import re
 
 from dotenv import load_dotenv
 
-from agents import Agent, ModelSettings, Runner, trace, FileSearchTool
+from agents import Agent, Runner, trace, FileSearchTool
 
 from app.agents.base_agent import BaseAgent
 from app.models.schemas import AgentResult
@@ -81,8 +81,6 @@ def _build_agent() -> Agent:
         name="Fundamental Analyst",
         instructions=_INSTRUCTIONS,
         tools=[FileSearchTool(vector_store_ids=[vector_store_id])],
-        # Low temperature: keep scores steadier across runs (demo stability).
-        model_settings=ModelSettings(temperature=0.3),
     )
 
 
