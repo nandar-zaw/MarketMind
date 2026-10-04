@@ -24,7 +24,7 @@ from agents import Agent, Runner, trace, FileSearchTool
 from app.agents.base_agent import BaseAgent
 from app.models.schemas import AgentResult
 
-load_dotenv()
+load_dotenv(override=True)
 
 _INSTRUCTIONS = (
     "You are a fundamental equity analyst. You answer ONLY from the company "
