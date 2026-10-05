@@ -14,6 +14,9 @@ Project structure and placeholder agents
 
 Real stock price data + Technical Agent
 
+- **DataAgent / market data:** done (OHLCV + company info via yfinance)
+- **Technical Agent:** done (RSI, SMA20/50, MACD, volume, 5-day trend)
+
 ---
 
 ## Phase 3

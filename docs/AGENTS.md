@@ -2,42 +2,65 @@
 
 This document describes each agent in beginner-friendly language.
 
-Phase 1 only defines placeholder classes.
-Real analysis will be added in later phases.
+Phase 1 only defines placeholder classes for some agents.
+The **Data Collector Agent** and **Technical Analysis Agent** are implemented;
+Sentiment still awaits a later phase. Risk and Coordinator already run a demo.
 
 ---
 
 ## 1. Data Collector Agent
 
+**Status:** Implemented (market data collection only)
+
 **Input:**
 - Stock ticker symbol (for example `AAPL`)
+- Optional `start` / `end` dates (`YYYY-MM-DD`)
+- Optional `period` (default approximately one year: `1y`)
+- Optional `as_of_date` to block future price observations (for later backtesting)
 
-**Future analysis:**
-- Download historical stock price data
-- Collect basic company information
-- Prepare clean data for other agents
+**What it does:**
+- Downloads historical OHLCV price data via `MarketDataService` (yfinance)
+- Collects basic company information (name, sector, industry, exchange, currency, market cap)
+- Normalizes tickers to uppercase and cleans unusable rows
+- Returns structured Pydantic output (`DataAgentResult`)
 
 **Output:**
-- Market and company data that other agents can use
+- `ticker`
+- `company_info`
+- `price_history` (oldest → newest)
+- `start_date` / `end_date`
+- `records_count`
+
+**What it does not do:**
+- Technical indicators, sentiment, fundamentals, risk scoring, or BUY/HOLD/SELL decisions
 
 ---
 
 ## 2. Technical Analysis Agent
 
-**Input:**
-- Historical stock price data
+**Status:** Implemented
 
-**Future analysis:**
-- RSI
-- Moving averages (SMA)
-- MACD
-- Volume trend
-- Short-term price trend
+**Input:**
+- Historical OHLCV price data from DataAgent (`list[MarketPrice]` / `DataAgentResult`)
+- Does **not** download market data itself
+
+**Analysis:**
+- RSI(14)
+- SMA20 vs SMA50
+- MACD (12 / 26 / 9)
+- Volume trend (vs 20-day average; supporting evidence only)
+- 5-trading-day price trend
+
+**How the signal is chosen:**
+- Each of RSI, SMA crossover, MACD, and 5-day trend votes +1 / 0 / -1
+- Score ≥ +2 → `bullish`; score ≤ -2 → `bearish`; otherwise `neutral`
+- Confidence grows with |score| and how many votes agree
 
 **Output:**
-- Technical signal (for example bullish / neutral / bearish)
-- Confidence score
-- Short explanation
+- Technical signal: `bullish` | `neutral` | `bearish` (never BUY/HOLD/SELL)
+- Confidence score (0.0 – 1.0)
+- Short explanation built from the indicator values
+- Detailed values also available via `TechnicalAnalysisResult`
 
 ---
 
