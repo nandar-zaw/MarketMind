@@ -30,13 +30,13 @@ Fundamental Agent
 
 ## Phase 5
 
-Risk Agent
+Risk Agent — implemented (volatility / drawdown / risk level)
 
 ---
 
 ## Phase 6
 
-Coordinator Agent
+Coordinator Agent — implemented (decision + input/tool/output guardrails)
 
 ---
 

@@ -78,36 +78,47 @@ Real analysis will be added in later phases.
 
 ## 5. Risk Manager Agent
 
-**Input:**
-- Price history and signals from other agents
+**Status:** implemented for the classroom demo.
 
-**Future analysis:**
-- Volatility
-- Recent price swings
-- Event risk
-- Basic risk level
+**Input:**
+- Price history (Close) from the market-data tool
+- Optional signals from other agents (event pressure)
+
+**Analysis:**
+- Annualized volatility
+- Max drawdown
+- 5-day return / latest daily move
+- LOW / MEDIUM / HIGH risk level
 
 **Output:**
-- Risk assessment / risk-adjusted view
+- `AgentResult` with signal `low` | `medium` | `high`
 - Confidence score
 - Short explanation
+
+This agent does **not** output BUY/SELL. It is a safety overlay for the Coordinator.
 
 ---
 
 ## 6. Coordinator Agent
 
-**Input:**
-- Results from Data, Technical, Sentiment, Fundamental, and Risk agents
+**Status:** implemented for the classroom demo, with guardrails.
 
-**Future analysis:**
-- Combine all signals into one decision
-- Weigh supporting and conflicting evidence
-- Build a clear explanation for the user
+**Input:**
+- User ticker (checked by an **input guardrail**)
+- Price history from `get_price_history` (checked by a **tool guardrail**)
+- Results from Technical, Sentiment, Fundamental, and Risk agents
+
+**Analysis:**
+- Run specialist agents; unimplemented ones are `unavailable` and do not vote
+- Ask Risk Manager to review
+- Blend live votes; if Technical is still missing, use a labeled 5-day return context
+- **Output guardrail:** HIGH risk cannot remain a BUY
 
 **Output:**
 - Final recommendation: **BUY**, **HOLD**, or **SELL**
 - Overall confidence score
 - Short explanation
 - Supporting evidence from each agent
+- Guardrail event log (input / tool / output)
 
 **Prediction horizon:** 5 trading days

@@ -1,24 +1,128 @@
 """
-Risk Manager Agent placeholder.
+Risk Manager Agent.
 
-Future responsibility:
-Assess volatility, recent price swings, event risk,
-and produce a basic risk level for the ticker.
+Job: measure how dangerous the recent price path is, then report a
+LOW / MEDIUM / HIGH risk level. This agent does not issue BUY/SELL.
+The Coordinator uses the risk level as a safety overlay.
 """
 
+from __future__ import annotations
+
+import math
+
+import pandas as pd
+
 from app.agents.base_agent import BaseAgent
+from app.guardrails import specialist_output_guardrail
+from app.models.schemas import AgentResult
 
 
 class RiskAgent(BaseAgent):
-    """
-    Future responsibility:
-    Evaluate risk factors and adjust recommendations for safety.
-    """
+    """Evaluate volatility, drawdown, and short-term swings."""
 
     name = "risk_agent"
 
-    async def analyze(self, ticker: str):
-        # TODO: In Phase 5, compute volatility and event risk.
-        raise NotImplementedError(
-            "Risk analysis will be implemented in Phase 5."
+    async def analyze(
+        self,
+        ticker: str,
+        price_history: pd.DataFrame | None = None,
+        agent_results: list[AgentResult] | None = None,
+    ) -> AgentResult:
+        if price_history is None or price_history.empty:
+            raise ValueError("RiskAgent requires price_history from the Coordinator.")
+
+        close = _close_series(price_history)
+        returns = close.pct_change().dropna()
+        if returns.empty:
+            raise ValueError("Not enough price points to compute risk.")
+
+        # Annualized volatility from daily returns.
+        daily_vol = float(returns.std(ddof=1))
+        annual_vol = daily_vol * math.sqrt(252)
+
+        rolling_peak = close.cummax()
+        drawdown = (close / rolling_peak) - 1.0
+        max_drawdown = float(drawdown.min())
+
+        window = min(5, len(close) - 1)
+        five_day_return = float(close.iloc[-1] / close.iloc[-1 - window] - 1.0)
+        latest_move = float(returns.iloc[-1])
+
+        event_flags = _event_flags(agent_results)
+        level, reason = _classify_risk(
+            annual_vol=annual_vol,
+            max_drawdown=max_drawdown,
+            five_day_return=five_day_return,
+            event_flags=event_flags,
         )
+        confidence = _risk_confidence(annual_vol, max_drawdown, len(close))
+
+        explanation = (
+            f"{ticker} risk is {level.upper()}. "
+            f"Annualized volatility is {annual_vol:.1%}, "
+            f"max drawdown is {max_drawdown:.1%}, "
+            f"and the last {window} sessions returned {five_day_return:.1%} "
+            f"(latest daily move {latest_move:.1%}). {reason}"
+        )
+
+        result = AgentResult(
+            agent_name=self.name,
+            signal=level,
+            confidence=confidence,
+            explanation=explanation,
+        )
+        return specialist_output_guardrail(result)
+
+
+def _close_series(price_history: pd.DataFrame) -> pd.Series:
+    close_col = next(col for col in price_history.columns if str(col).lower() == "close")
+    return price_history[close_col].astype(float)
+
+
+NEGATIVE_SIGNALS = {"bearish", "sell"}
+
+
+def _event_flags(agent_results: list[AgentResult] | None) -> list[str]:
+    flags: list[str] = []
+    for result in agent_results or []:
+        if result.agent_name == "sentiment_agent" and result.signal in NEGATIVE_SIGNALS:
+            flags.append("bearish news/sentiment")
+        if result.agent_name == "fundamental_agent" and result.signal in NEGATIVE_SIGNALS:
+            flags.append("weak fundamentals")
+    return flags
+
+
+def _classify_risk(
+    annual_vol: float,
+    max_drawdown: float,
+    five_day_return: float,
+    event_flags: list[str],
+) -> tuple[str, str]:
+    """
+    Simple, explainable thresholds (classroom-friendly, not a bank model).
+
+    HIGH: very jumpy prices, deep recent loss, or extra event pressure.
+    MEDIUM: elevated vol or a noticeable swing.
+    LOW: relatively calm recent path.
+    """
+    deep_loss = max_drawdown <= -0.15 or five_day_return <= -0.08
+    jumpy = annual_vol >= 0.40
+    elevated = annual_vol >= 0.25 or max_drawdown <= -0.08 or abs(five_day_return) >= 0.05
+
+    if jumpy or deep_loss or (elevated and event_flags):
+        extra = ""
+        if event_flags:
+            extra = " Event pressure: " + ", ".join(event_flags) + "."
+        return "high", "This name is too unstable for an aggressive BUY." + extra
+
+    if elevated:
+        return "medium", "Swings are large enough that position size should stay conservative."
+
+    return "low", "Recent price action is relatively calm."
+
+
+def _risk_confidence(annual_vol: float, max_drawdown: float, n_days: int) -> float:
+    """Higher when the sample is longer and the classification is farther from a threshold."""
+    sample = min(1.0, n_days / 90)
+    distance = min(abs(annual_vol - 0.25), abs(max_drawdown + 0.08))
+    return round(min(0.92, 0.55 + 0.3 * sample + min(0.15, distance)), 4)

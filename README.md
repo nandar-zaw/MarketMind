@@ -44,29 +44,23 @@ For a given ticker (for example `AAPL`), MarketMind will return:
 
 ---
 
-## Phase 1 Status
+## Current Status
 
-**Phase 1 currently contains only project scaffolding.**
+**Scaffolding is in place, and Risk Manager + Coordinator now run a guarded demo.**
 
-This means:
+Working today:
 
-- folder structure exists
-- FastAPI app starts
-- `/health` works
-- agent placeholder classes exist
-- Pydantic models exist
-- documentation exists
-- basic tests pass
+- FastAPI `/health`
+- input / tool / output guardrails
+- Risk Manager Agent (volatility, drawdown, short-term swings)
+- Coordinator / Decision Agent (combines evidence into BUY / HOLD / SELL)
+- `GET` or `POST /analyze/{ticker}` returns a structured recommendation
+- live prices via yfinance (through a tool allowlist)
 
-Phase 1 does **not** yet:
+Still teammate / later work:
 
-- call market APIs
-- fetch real news
-- calculate technical indicators
-- train machine learning models
-- call an LLM
-- create real buy/sell recommendations
-- run backtesting
+- Technical, Sentiment, and Fundamental analysis (Coordinator marks them `unavailable` and they do not vote yet)
+- news APIs, ML model, backtesting, dashboard
 
 ---
 
@@ -136,13 +130,21 @@ Expected `/health` response:
 }
 ```
 
-The analyze endpoint is a placeholder for later phases:
+Analyze a ticker (Risk + Coordinator demo):
 
 ```bash
-POST /analyze/{ticker}
+# easy for a browser demo
+open http://127.0.0.1:8000/analyze/AAPL
+
+# or POST
+curl -X POST http://127.0.0.1:8000/analyze/AAPL
 ```
 
-It currently returns **HTTP 501 Not Implemented**.
+Try a rejected input to show an input guardrail:
+
+```bash
+curl http://127.0.0.1:8000/analyze/not-a-ticker
+```
 
 ---
 

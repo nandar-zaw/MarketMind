@@ -1,37 +1,63 @@
 """
-Market data service placeholder.
+Market data service.
 
-Future responsibility:
-Fetch historical stock prices and basic company information
-(for example via yfinance or another data source).
-
-Phase 1 does not call any market APIs.
+Downloads recent OHLCV prices. The Coordinator calls this through a
+tool guardrail so agents cannot request arbitrary lookbacks or tools.
 """
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+
+
+class MarketDataError(Exception):
+    """Raised when price history cannot be downloaded."""
 
 
 class MarketDataService:
-    """
-    Placeholder for stock price and company data access.
+    """Stock price access used by Risk Manager and Coordinator."""
 
-    TODO: Implement real data download in Phase 2.
-    """
-
-    def get_price_history(self, ticker: str, days: int = 90):
+    def get_price_history(self, ticker: str, days: int = 90) -> pd.DataFrame:
         """
-        Return historical OHLCV price data for a ticker.
+        Return recent OHLCV data for a ticker.
 
-        Not implemented in Phase 1.
+        Uses yfinance. The caller must already have passed tool guardrails.
         """
-        raise NotImplementedError(
-            "Market price history will be implemented in Phase 2."
+        try:
+            import yfinance as yf
+        except ImportError as exc:
+            raise MarketDataError(
+                "yfinance is not installed. Run: pip install -r requirements.txt"
+            ) from exc
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=days + 10)
+        frame = yf.download(
+            ticker,
+            start=start.date().isoformat(),
+            end=end.date().isoformat(),
+            auto_adjust=True,
+            progress=False,
         )
+        if frame is None or frame.empty:
+            raise MarketDataError(f"No price history returned for {ticker}.")
+
+        if isinstance(frame.columns, pd.MultiIndex):
+            frame.columns = frame.columns.get_level_values(0)
+
+        frame = frame.rename(columns=str.title)
+        required = ["Close"]
+        missing = [col for col in required if col not in frame.columns]
+        if missing:
+            raise MarketDataError(
+                f"Price history for {ticker} is missing columns: {missing}"
+            )
+        return frame.dropna(subset=["Close"]).tail(days)
 
     def get_company_info(self, ticker: str):
-        """
-        Return basic company information for a ticker.
-
-        Not implemented in Phase 1.
-        """
+        """Company info stays for the Data Collector Agent (later)."""
         raise NotImplementedError(
-            "Company info lookup will be implemented in Phase 2."
+            "Company info lookup will be implemented with the Data Agent."
         )
