@@ -31,7 +31,15 @@ TICKER_PATTERN = re.compile(r"^[A-Z]{1,5}$")
 MAX_EXPLANATION_CHARS = 1200
 MIN_PRICE_ROWS = 20
 ALLOWED_RECOMMENDATIONS = {"BUY", "HOLD", "SELL"}
-ALLOWED_SPECIALIST_SIGNALS = {"bullish", "neutral", "bearish", "unavailable"}
+ALLOWED_SPECIALIST_SIGNALS = {
+    "bullish",
+    "neutral",
+    "bearish",
+    "buy",
+    "hold",
+    "sell",
+    "unavailable",
+}
 ALLOWED_RISK_SIGNALS = {"low", "medium", "high"}
 ALLOWED_TOOLS = {
     "get_price_history": {"min_days": 20, "max_days": 252},

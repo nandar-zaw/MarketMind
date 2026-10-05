@@ -33,7 +33,15 @@ from app.guardrails import (
 from app.models.schemas import AgentResult, FinalRecommendation, GuardrailEvent
 from app.services.market_data import MarketDataError, MarketDataService
 
-SIGNAL_SCORE = {"bullish": 1.0, "neutral": 0.0, "bearish": -1.0, "unavailable": 0.0}
+SIGNAL_SCORE = {
+    "bullish": 1.0,
+    "neutral": 0.0,
+    "bearish": -1.0,
+    "buy": 1.0,
+    "hold": 0.0,
+    "sell": -1.0,
+    "unavailable": 0.0,
+}
 SPECIALIST_WEIGHTS = {
     "technical_agent": 0.35,
     "sentiment_agent": 0.20,
