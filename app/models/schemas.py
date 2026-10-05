@@ -83,3 +83,19 @@ class DataAgentResult(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     records_count: int
+
+
+class TechnicalAnalysisResult(BaseModel):
+    """Detailed technical analysis from the Technical Agent."""
+
+    signal: str  # bullish | neutral | bearish
+    confidence: float  # 0.0 – 1.0
+    rsi: float
+    sma20: float
+    sma50: float
+    macd: float
+    macd_signal: float
+    price_change_5d: float  # fraction, e.g. 0.012 = +1.2%
+    volume_trend: str  # above_average | normal | below_average | unavailable
+    explanation: str
+    score: int  # sum of indicator votes for transparency
