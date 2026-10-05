@@ -4,6 +4,7 @@ import asyncio
 
 import numpy as np
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.base_agent import BaseAgent
@@ -18,6 +19,21 @@ from app.models.schemas import AgentResult, AnalysisRequest
 from app.services.market_data import MarketDataService
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def offline_fundamental_agent(monkeypatch):
+    """Keep tests offline: the real Fundamental agent calls OpenAI."""
+
+    async def fake_analyze(self, ticker: str):
+        return AgentResult(
+            agent_name="fundamental_agent",
+            signal="hold",
+            confidence=0.5,
+            explanation="Offline test stub for the Fundamental agent.",
+        )
+
+    monkeypatch.setattr(FundamentalAgent, "analyze", fake_analyze)
 
 
 def make_prices(n: int = 80, start: float = 100.0, daily_vol: float = 0.01, drift: float = 0.001) -> pd.DataFrame:
@@ -115,6 +131,43 @@ def test_high_risk_cannot_stay_as_buy():
     assert result.recommendation != "BUY"
     risk = next(item for item in result.agent_results if item.agent_name == "risk_agent")
     assert risk.signal == "high"
+
+
+def test_fundamental_sell_vote_is_counted():
+    class SellStub(BaseAgent):
+        name = "fundamental_agent"
+
+        async def analyze(self, ticker: str):
+            return AgentResult(
+                agent_name=self.name,
+                signal="sell",
+                confidence=0.8,
+                explanation="Stub weak fundamentals.",
+            )
+
+    coordinator = CoordinatorAgent(
+        price_fetcher=lambda **_: make_prices(daily_vol=0.008, drift=0.0),
+        specialists={"fundamental_agent": SellStub()},
+    )
+    result = asyncio.run(coordinator.analyze("AAPL"))
+    assert "fundamental_agent=sell" in result.explanation
+
+
+def test_failing_specialist_becomes_unavailable():
+    class BrokenStub(BaseAgent):
+        name = "fundamental_agent"
+
+        async def analyze(self, ticker: str):
+            raise RuntimeError("FUNDAMENTALS_VECTOR_STORE_ID is not set.")
+
+    coordinator = CoordinatorAgent(
+        price_fetcher=lambda **_: make_prices(),
+        specialists={"fundamental_agent": BrokenStub()},
+    )
+    result = asyncio.run(coordinator.analyze("AAPL"))
+    fundamental = next(r for r in result.agent_results if r.agent_name == "fundamental_agent")
+    assert fundamental.signal == "unavailable"
+    assert "RuntimeError" in fundamental.explanation
 
 
 def test_analyze_endpoint_rejects_bad_ticker():

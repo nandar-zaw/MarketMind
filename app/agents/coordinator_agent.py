@@ -141,19 +141,31 @@ class CoordinatorAgent(BaseAgent):
                 results.append(specialist_output_guardrail(raw))
             except NotImplementedError:
                 results.append(
-                    specialist_output_guardrail(
-                        AgentResult(
-                            agent_name=name,
-                            signal="unavailable",
-                            confidence=0.0,
-                            explanation=(
-                                f"{name} is not implemented yet, so it does not vote. "
-                                "Coordinator uses risk + short-horizon price context instead."
-                            ),
-                        )
+                    _unavailable(
+                        name,
+                        f"{name} is not implemented yet, so it does not vote. "
+                        "Coordinator uses risk + short-horizon price context instead.",
+                    )
+                )
+            except Exception as exc:  # one failing specialist must not sink the decision
+                results.append(
+                    _unavailable(
+                        name,
+                        f"{name} failed ({type(exc).__name__}: {exc}), so it does not vote.",
                     )
                 )
         return results
+
+
+def _unavailable(name: str, explanation: str) -> AgentResult:
+    return specialist_output_guardrail(
+        AgentResult(
+            agent_name=name,
+            signal="unavailable",
+            confidence=0.0,
+            explanation=explanation,
+        )
+    )
 
 
 def _close_series(price_history: pd.DataFrame) -> pd.Series:
