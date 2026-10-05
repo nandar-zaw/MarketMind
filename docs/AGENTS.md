@@ -2,23 +2,37 @@
 
 This document describes each agent in beginner-friendly language.
 
-Phase 1 only defines placeholder classes.
-Real analysis will be added in later phases.
+Phase 1 only defines placeholder classes for most agents.
+The **Data Collector Agent** now fetches real market data; other agents
+still await later phases.
 
 ---
 
 ## 1. Data Collector Agent
 
+**Status:** Implemented (market data collection only)
+
 **Input:**
 - Stock ticker symbol (for example `AAPL`)
+- Optional `start` / `end` dates (`YYYY-MM-DD`)
+- Optional `period` (default approximately one year: `1y`)
+- Optional `as_of_date` to block future price observations (for later backtesting)
 
-**Future analysis:**
-- Download historical stock price data
-- Collect basic company information
-- Prepare clean data for other agents
+**What it does:**
+- Downloads historical OHLCV price data via `MarketDataService` (yfinance)
+- Collects basic company information (name, sector, industry, exchange, currency, market cap)
+- Normalizes tickers to uppercase and cleans unusable rows
+- Returns structured Pydantic output (`DataAgentResult`)
 
 **Output:**
-- Market and company data that other agents can use
+- `ticker`
+- `company_info`
+- `price_history` (oldest → newest)
+- `start_date` / `end_date`
+- `records_count`
+
+**What it does not do:**
+- Technical indicators, sentiment, fundamentals, risk scoring, or BUY/HOLD/SELL decisions
 
 ---
 

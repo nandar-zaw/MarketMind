@@ -4,6 +4,9 @@ Pydantic schemas for MarketMind requests and responses.
 These models define the structured data shapes used across agents.
 """
 
+from datetime import date
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -45,3 +48,38 @@ class FinalRecommendation(BaseModel):
     horizon_days: int = 5
     agent_results: list[AgentResult]
     guardrails: list[GuardrailEvent] = Field(default_factory=list)
+
+
+class MarketPrice(BaseModel):
+    """One daily OHLCV observation for a ticker."""
+
+    date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    adj_close: Optional[float] = None
+
+
+class CompanyInfo(BaseModel):
+    """Basic company metadata from the market data provider."""
+
+    ticker: str
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    exchange: Optional[str] = None
+    currency: Optional[str] = None
+    market_cap: Optional[float] = None
+
+
+class DataAgentResult(BaseModel):
+    """Structured output from the Data Collector Agent."""
+
+    ticker: str
+    company_info: CompanyInfo
+    price_history: list[MarketPrice]
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    records_count: int
