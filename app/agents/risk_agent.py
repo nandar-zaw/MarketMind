@@ -79,12 +79,15 @@ def _close_series(price_history: pd.DataFrame) -> pd.Series:
     return price_history[close_col].astype(float)
 
 
+NEGATIVE_SIGNALS = {"bearish", "sell"}
+
+
 def _event_flags(agent_results: list[AgentResult] | None) -> list[str]:
     flags: list[str] = []
     for result in agent_results or []:
-        if result.agent_name == "sentiment_agent" and result.signal == "bearish":
+        if result.agent_name == "sentiment_agent" and result.signal in NEGATIVE_SIGNALS:
             flags.append("bearish news/sentiment")
-        if result.agent_name == "fundamental_agent" and result.signal == "bearish":
+        if result.agent_name == "fundamental_agent" and result.signal in NEGATIVE_SIGNALS:
             flags.append("weak fundamentals")
     return flags
 
