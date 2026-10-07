@@ -74,12 +74,22 @@ class CompanyInfo(BaseModel):
     market_cap: Optional[float] = None
 
 
+class NewsItem(BaseModel):
+    """One recent news headline about a ticker."""
+
+    title: str
+    publisher: str = "Unknown source"
+    published: Optional[str] = None  # ISO date (YYYY-MM-DD) when known
+    summary: str = ""
+
+
 class DataAgentResult(BaseModel):
     """Structured output from the Data Collector Agent."""
 
     ticker: str
     company_info: CompanyInfo
     price_history: list[MarketPrice]
+    news: list[NewsItem] = Field(default_factory=list)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     records_count: int

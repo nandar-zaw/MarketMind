@@ -1,8 +1,9 @@
 """
 Data Collector Agent.
 
-Retrieves historical OHLCV prices and basic company information
-for other agents. Does not make investment decisions.
+Retrieves historical OHLCV prices, basic company information, and
+recent news headlines for other agents. Does not make investment
+decisions.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Optional
 from app.agents.base_agent import BaseAgent
 from app.models.schemas import DataAgentResult
 from app.services.market_data import MarketDataService
+from app.services.news_data import NewsDataService
 from app.utils.exceptions import MarketDataError
 from app.utils.helpers import normalize_ticker
 
@@ -31,8 +33,13 @@ class DataAgent(BaseAgent):
 
     name = "data_agent"
 
-    def __init__(self, market_data_service: Optional[MarketDataService] = None):
+    def __init__(
+        self,
+        market_data_service: Optional[MarketDataService] = None,
+        news_data_service: Optional[NewsDataService] = None,
+    ):
         self.market_data = market_data_service or MarketDataService()
+        self.news_data = news_data_service or NewsDataService()
 
     async def analyze(
         self,
@@ -54,7 +61,8 @@ class DataAgent(BaseAgent):
             as_of_date: Optional cutoff date; no prices after this date are returned.
 
         Returns:
-            DataAgentResult with company info and chronological OHLCV history.
+            DataAgentResult with company info, chronological OHLCV
+            history, and recent news headlines.
         """
         if ticker is None or not str(ticker).strip():
             raise MarketDataError("Ticker must not be empty.")
@@ -78,10 +86,24 @@ class DataAgent(BaseAgent):
         )
         company_info = self.market_data.get_company_info(symbol)
 
+        # News is supporting data (the Sentiment Agent consumes it).
+        # A news outage must not fail the whole data pull, so errors
+        # degrade to an empty list instead of raising.
+        try:
+            news = self.news_data.get_recent_news(symbol)
+        except Exception as exc:
+            logger.warning(
+                "DataAgent: news fetch failed for %s (%s); continuing without headlines.",
+                symbol,
+                exc,
+            )
+            news = []
+
         result = DataAgentResult(
             ticker=symbol,
             company_info=company_info,
             price_history=price_history,
+            news=news,
             start_date=price_history[0].date if price_history else None,
             end_date=price_history[-1].date if price_history else None,
             records_count=len(price_history),

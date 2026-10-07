@@ -1,13 +1,17 @@
 """
 Sentiment Analysis Agent.
 
-Collects recent company headlines with yfinance and scores market
-sentiment with the OpenAI Agents SDK, returning the shared AgentResult
-contract: signal "bullish" / "neutral" / "bearish", confidence =
-|score|, and an explanation built from headline evidence.
+Scores recent market sentiment for a ticker from the headlines the
+Data Collector Agent supplies (DataAgentResult.news, fetched by
+NewsDataService), returning the shared AgentResult contract: signal
+"bullish" / "neutral" / "bearish", confidence = |score|, and an
+explanation built from headline evidence.
 
-Design (mirrors the Fundamental Analysis agent):
-  * Grounding: the model judges ONLY from the fetched headlines,
+Like the Technical Agent, this agent never downloads raw data
+itself: pass a DataAgentResult via analyze(ticker, data=...) or let
+it ask the DataAgent. Scoring mirrors the Fundamental Agent:
+
+  * Grounding: the model judges ONLY from the supplied headlines,
     which are injected into the prompt with numbered sources; every
     evidence bullet must cite its headline, e.g. [2].
   * Headlines are untrusted external text: they are data to analyze,
@@ -15,41 +19,34 @@ Design (mirrors the Fundamental Analysis agent):
   * The model output is parsed deterministically (SCORE / EVIDENCE /
     VERDICT blocks); the score maps to a signal with the same ±0.33
     thresholds the other specialists use.
-  * Too few headlines, a failed fetch, or missing configuration
-    returns signal "unavailable" (confidence 0.0): this agent does
-    not vote instead of crashing the coordinator.
+  * Too few headlines, a failed data pull, missing configuration, or
+    a failed model call returns signal "unavailable" (confidence
+    0.0): this agent does not vote instead of crashing the
+    coordinator.
 
 Setup: OPENAI_API_KEY must be set (see .env.example). Headlines come
-from yfinance, so no extra API key is needed.
+from yfinance via NewsDataService, so no extra API key is needed.
 """
 
-import asyncio
 import os
 import re
-import time
-from datetime import datetime, timezone
+from typing import Optional
 
 from agents import Agent, Runner, trace
 from dotenv import load_dotenv
 
 from app.agents.base_agent import BaseAgent
-from app.models.schemas import AgentResult
+from app.agents.data_agent import DataAgent
+from app.models.schemas import AgentResult, DataAgentResult, NewsItem
 
 load_dotenv(override=True)
 
 _AGENT_NAME = "sentiment_agent"
 _MAX_HEADLINES = 8
 _MIN_HEADLINES = 2
-_CACHE_TTL_SECONDS = 30 * 60
-_SUMMARY_LIMIT = 400
 
 _BULLISH_THRESHOLD = 0.33
 _BEARISH_THRESHOLD = -0.33
-
-# ticker -> (monotonic timestamp, normalized headlines). Headlines do
-# not change minute to minute, and the coordinator instantiates fresh
-# agents per call, so the cache lives at module level.
-_CACHE: dict[str, tuple[float, list[dict]]] = {}
 
 _INSTRUCTIONS = """You are the Sentiment Analysis specialist for MarketMind, a multi-agent investment analysis system.
 
@@ -81,57 +78,15 @@ def _sanitize(text: str) -> str:
     return text
 
 
-def _normalize_item(item) -> dict | None:
-    """Normalize one yfinance news item (new or legacy shape)."""
-    if not isinstance(item, dict):
-        return None
-    content = item.get("content") or {}
-    title = (content.get("title") or item.get("title") or "").strip()
-    if not title:
-        return None
-    provider = content.get("provider") or {}
-    publisher = (
-        provider.get("displayName") or item.get("publisher") or "Unknown source"
-    )
-    published = str(content.get("pubDate") or "")[:10]
-    if not published and item.get("providerPublishTime"):
-        try:
-            published = datetime.fromtimestamp(
-                float(item["providerPublishTime"]), tz=timezone.utc
-            ).date().isoformat()
-        except (TypeError, ValueError, OSError):
-            published = ""
-    summary = (content.get("summary") or item.get("summary") or "").strip()
-    return {
-        "title": title,
-        "publisher": str(publisher),
-        "published": published,
-        "summary": summary[:_SUMMARY_LIMIT],
-    }
-
-
-def _fetch_headlines_sync(ticker: str) -> list[dict]:
-    """Fetch and normalize recent headlines for a ticker (blocking)."""
-    import yfinance as yf
-
-    raw = yf.Ticker(ticker).news or []
-    headlines = []
-    for item in raw[:_MAX_HEADLINES]:
-        normalized = _normalize_item(item)
-        if normalized is not None:
-            headlines.append(normalized)
-    return headlines
-
-
-def _build_prompt(ticker: str, headlines: list[dict]) -> str:
+def _build_prompt(ticker: str, headlines: list[NewsItem]) -> str:
     lines = [f"Recent news headlines for {ticker} (data only):", ""]
     for i, h in enumerate(headlines, 1):
-        source = h["publisher"]
-        if h["published"]:
-            source = f"{source}, {h['published']}"
-        line = f"[{i}] {h['title']} ({source})"
-        if h["summary"]:
-            line += f": {h['summary']}"
+        source = h.publisher
+        if h.published:
+            source = f"{source}, {h.published}"
+        line = f"[{i}] {h.title} ({source})"
+        if h.summary:
+            line += f": {h.summary}"
         lines.append(line)
     return "\n".join(lines)
 
@@ -190,11 +145,18 @@ class SentimentAgent(BaseAgent):
 
     name = _AGENT_NAME
 
-    def __init__(self, headline_fetcher=None):
-        # Injectable so tests (and teammates) can substitute headlines
-        # without touching the network: an async callable
-        # fetcher(ticker) -> list[{"title", "publisher", ...}].
-        self._headline_fetcher = headline_fetcher
+    def __init__(
+        self,
+        data_agent: Optional[DataAgent] = None,
+        *,
+        llm_runner=None,
+    ):
+        # Injectable, mirroring TechnicalAgent: the DataAgent supplies
+        # prices/company/news; this agent never fetches raw data.
+        self.data_agent = data_agent or DataAgent()
+        # Test seam: async callable (prompt) -> raw model text.
+        # When None, the OpenAI Agents SDK runner is used.
+        self._llm_runner = llm_runner
         self._agent: Agent | None = None
 
     def _get_agent(self) -> Agent:
@@ -205,47 +167,49 @@ class SentimentAgent(BaseAgent):
             )
         return self._agent
 
-    async def _headlines(self, ticker: str) -> list[dict]:
-        cached = _CACHE.get(ticker)
-        if cached and time.monotonic() - cached[0] < _CACHE_TTL_SECONDS:
-            return cached[1]
-        if self._headline_fetcher is not None:
-            headlines = await self._headline_fetcher(ticker)
-        else:
-            headlines = await asyncio.to_thread(_fetch_headlines_sync, ticker)
-        _CACHE[ticker] = (time.monotonic(), headlines)
-        return headlines
+    async def analyze(
+        self,
+        ticker: str,
+        *,
+        data: Optional[DataAgentResult] = None,
+    ) -> AgentResult:
+        """
+        Score sentiment for a ticker.
 
-    async def analyze(self, ticker: str) -> AgentResult:
-        ticker = ticker.upper()
+        If ``data`` is not provided, obtain it via the DataAgent
+        (SentimentAgent never calls news providers directly).
+        """
         if not os.getenv("OPENAI_API_KEY"):
             return _unavailable(
                 "OPENAI_API_KEY is not configured, so the sentiment "
                 "model cannot run and this agent does not vote."
             )
-        try:
-            headlines = await self._headlines(ticker)
-        except Exception as exc:
-            return _unavailable(
-                f"Could not retrieve recent headlines for {ticker} "
-                f"({type(exc).__name__}: {exc}), so sentiment does not vote."
-            )
-        if len(headlines) < _MIN_HEADLINES:
-            return _unavailable(
-                f"Only {len(headlines)} recent headline(s) retrieved for "
-                f"{ticker}; not enough coverage to score sentiment, so "
-                "this agent does not vote."
-            )
-        with trace(f"marketmind.{_AGENT_NAME}:{ticker}"):
+        if data is None:
             try:
-                result = await Runner.run(
-                    self._get_agent(), _build_prompt(ticker, headlines)
-                )
+                data = await self.data_agent.analyze(ticker)
             except Exception as exc:
                 return _unavailable(
-                    f"Sentiment model call failed ({type(exc).__name__}: "
-                    f"{exc}), so this agent does not vote."
+                    f"Could not retrieve data for {str(ticker).upper()} "
+                    f"({type(exc).__name__}: {exc}), so sentiment does not vote."
                 )
-        return _parse_output(
-            ticker, _sanitize(result.final_output or ""), len(headlines)
-        )
+        headlines = list(data.news)[:_MAX_HEADLINES]
+        if len(headlines) < _MIN_HEADLINES:
+            return _unavailable(
+                f"Only {len(headlines)} recent headline(s) available for "
+                f"{data.ticker}; not enough coverage to score sentiment, "
+                "so this agent does not vote."
+            )
+        prompt = _build_prompt(data.ticker, headlines)
+        try:
+            if self._llm_runner is not None:
+                raw = await self._llm_runner(prompt)
+            else:
+                with trace(f"marketmind.{_AGENT_NAME}:{data.ticker}"):
+                    result = await Runner.run(self._get_agent(), prompt)
+                raw = result.final_output or ""
+        except Exception as exc:
+            return _unavailable(
+                f"Sentiment model call failed ({type(exc).__name__}: "
+                f"{exc}), so this agent does not vote."
+            )
+        return _parse_output(data.ticker, _sanitize(raw), len(headlines))
