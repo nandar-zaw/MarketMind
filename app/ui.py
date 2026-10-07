@@ -15,17 +15,24 @@ the final panel shows the recommendation with its guardrail audit
 trail. Teammates never need to touch this file: when a specialist
 starts returning real results instead of "unavailable", its panel
 fills in automatically.
+
+The company header and the price chart come from the DataAgent (the
+same data layer the specialists use) and are best-effort: if that
+fetch fails, the recommendation panels still render.
 """
 
 import gradio as gr
+import pandas as pd
 
 from app.agents.coordinator_agent import CoordinatorAgent
-from app.models.schemas import AgentResult, FinalRecommendation
+from app.agents.data_agent import DataAgent
+from app.models.schemas import AgentResult, DataAgentResult, FinalRecommendation
 
 TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
 HORIZONS = [3, 5, 10]
 
 _coordinator = CoordinatorAgent()
+_data_agent = DataAgent()
 
 _SIGNAL_BADGES = {
     "buy": "🟢 BUY",
@@ -67,13 +74,65 @@ def _guardrail_lines(final: FinalRecommendation) -> str:
     return "\n".join(lines)
 
 
+def _fmt_market_cap(value: float) -> str:
+    if value >= 1e12:
+        return f"${value / 1e12:.2f}T"
+    if value >= 1e9:
+        return f"${value / 1e9:.1f}B"
+    if value >= 1e6:
+        return f"${value / 1e6:.0f}M"
+    return f"${value:,.0f}"
+
+
+def _company_markdown(data: DataAgentResult | None) -> str:
+    """One-line company header (name, sector, industry, market cap)."""
+    if data is None:
+        return ""
+    info = data.company_info
+    lines = [f"### {info.company_name or data.ticker} ({data.ticker})"]
+    meta = [part for part in (info.sector, info.industry, info.exchange) if part]
+    if info.market_cap:
+        meta.append(f"Market cap {_fmt_market_cap(info.market_cap)}")
+    if meta:
+        lines.append(" · ".join(meta))
+    return "\n".join(lines)
+
+
+def _chart_frame(data: DataAgentResult | None):
+    """Long-format price frame (Close, SMA20, SMA50) for gr.LinePlot."""
+    if data is None or len(data.price_history) < 2:
+        return None
+    frame = pd.DataFrame(
+        {
+            "date": [p.date for p in data.price_history],
+            "Close": [p.close for p in data.price_history],
+        }
+    )
+    frame["SMA20"] = frame["Close"].rolling(window=20).mean()
+    frame["SMA50"] = frame["Close"].rolling(window=50).mean()
+    return frame.melt(
+        id_vars="date",
+        value_vars=["Close", "SMA20", "SMA50"],
+        var_name="Series",
+        value_name="Price",
+    ).dropna()
+
+
+async def _visual_data(ticker: str) -> DataAgentResult | None:
+    """Best-effort DataAgent pull behind the chart/company header."""
+    try:
+        return await _data_agent.analyze(ticker)
+    except Exception:
+        return None
+
+
 async def analyze(ticker: str, horizon_days: int):
     """Run the Coordinator once and fill every panel from its result."""
     try:
         final = await _coordinator.analyze(ticker, horizon_days=horizon_days)
     except Exception as exc:  # surface config/API/data errors, not a crash
         error = ("—", "—", f"⚠️ **{type(exc).__name__}:** {exc}")
-        return (*error, *error, *error, *error, *error)
+        return (*error, *error, *error, *error, *error, None, "")
     by_agent = {r.agent_name: r for r in final.agent_results}
     final_values = (
         _badge(final.recommendation),
@@ -81,12 +140,15 @@ async def analyze(ticker: str, horizon_days: int):
         f"{final.explanation}\n\n_Horizon: {final.horizon_days} trading days._"
         + _guardrail_lines(final),
     )
+    data = await _visual_data(final.ticker)
     return (
         *final_values,
         *_panel_values(by_agent.get("fundamental_agent")),
         *_panel_values(by_agent.get("technical_agent")),
         *_panel_values(by_agent.get("sentiment_agent")),
         *_panel_values(by_agent.get("risk_agent")),
+        _chart_frame(data),
+        _company_markdown(data),
     )
 
 
@@ -103,14 +165,19 @@ with gr.Blocks(title="MarketMind") as demo:
         "# MarketMind\n"
         "Multi-agent system for S&P 500 trend prediction and investment "
         "decision support. *For course demonstration only. Not financial "
-        "advice.*"
+        "advice.*\n\n"
+        "**How it works:** the Coordinator asks the DataAgent for prices, "
+        "company info, and news → Technical, Sentiment, and Fundamental "
+        "agents vote → the Risk Manager reviews → final BUY / HOLD / SELL "
+        "with a guardrail audit trail."
     )
 
     with gr.Row():
         ticker_input = gr.Dropdown(
             choices=TICKERS,
             value="AAPL",
-            label="Ticker (companies with SEC filings in the vector store)",
+            allow_custom_value=True,
+            label="Ticker (type any symbol; the 5 listed have SEC filings in the vector store)",
         )
         horizon_input = gr.Dropdown(
             choices=HORIZONS,
@@ -119,24 +186,45 @@ with gr.Blocks(title="MarketMind") as demo:
         )
         analyze_button = gr.Button("Analyze", variant="primary")
 
+    company_output = gr.Markdown()
+
     final_outputs = _agent_panel(
         "Final Recommendation (Coordinator)", open_by_default=True
+    )
+    chart_output = gr.LinePlot(
+        label="Price history (1 year) with SMA20 and SMA50",
+        x="date",
+        y="Price",
+        color="Series",
+        height=320,
     )
     fundamental_outputs = _agent_panel("Fundamental Analysis")
     technical_outputs = _agent_panel("Technical Analysis")
     sentiment_outputs = _agent_panel("Sentiment Analysis")
     risk_outputs = _agent_panel("Risk Manager")
 
+    all_outputs = [
+        *final_outputs,
+        *fundamental_outputs,
+        *technical_outputs,
+        *sentiment_outputs,
+        *risk_outputs,
+        chart_output,
+        company_output,
+    ]
+
     analyze_button.click(
         fn=analyze,
         inputs=[ticker_input, horizon_input],
-        outputs=[
-            *final_outputs,
-            *fundamental_outputs,
-            *technical_outputs,
-            *sentiment_outputs,
-            *risk_outputs,
-        ],
+        outputs=all_outputs,
+    )
+    gr.Examples(
+        examples=[["AAPL", 5], ["TSLA", 5], ["NVDA", 10]],
+        inputs=[ticker_input, horizon_input],
+        outputs=all_outputs,
+        fn=analyze,
+        run_on_click=True,
+        label="Demo examples (click to run)",
     )
 
 

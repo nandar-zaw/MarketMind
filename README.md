@@ -46,23 +46,23 @@ For a given ticker (for example `AAPL`), MarketMind will return:
 
 ## Current Status
 
-**Scaffolding is in place. The Data Collector Agent now fetches real market data,
-and Risk Manager + Coordinator run a guarded demo.**
+**All specialist agents are implemented and voting; the Coordinator blends
+their evidence behind input / tool / output guardrails.**
 
 Working today:
 
 - FastAPI `/health`
-- **Data Collector Agent** fetches OHLCV prices + basic company info via yfinance
+- **Data Collector Agent** fetches OHLCV prices, basic company info, and recent news headlines via yfinance
+- Technical Agent (RSI, SMA, MACD, volume, 5-day trend), Sentiment Agent (LLM scoring of the supplied headlines), Fundamental Agent (RAG over SEC filings)
 - input / tool / output guardrails
 - Risk Manager Agent (volatility, drawdown, short-term swings)
 - Coordinator / Decision Agent (combines evidence into BUY / HOLD / SELL)
 - `GET` or `POST /analyze/{ticker}` returns a structured recommendation
-- live prices via yfinance (through a tool allowlist)
+- Gradio dashboard (`python -m app.ui`): final recommendation, per-agent panels, guardrail audit trail, 1-year price chart with SMA20/SMA50, company header, one-click demo examples
 
-Still teammate / later work:
+Still later work:
 
-- Technical, Sentiment, and Fundamental analysis (Coordinator marks them `unavailable` and they do not vote yet)
-- news APIs, ML model, backtesting, dashboard
+- ML model, backtesting
 
 ---
 
@@ -131,6 +131,17 @@ Expected `/health` response:
   "project": "MarketMind"
 }
 ```
+
+Or run the Gradio dashboard (final recommendation, agent panels, price chart):
+
+```bash
+python -m app.ui
+```
+
+Then open the printed local URL (usually http://127.0.0.1:7860), pick a
+ticker, and click **Analyze**. Set `OPENAI_API_KEY` and
+`FUNDAMENTALS_VECTOR_STORE_ID` in `.env` first (see `.env.example`), or the
+LLM-based agents will report `unavailable`.
 
 Analyze a ticker (Risk + Coordinator demo):
 
