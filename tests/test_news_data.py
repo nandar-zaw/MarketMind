@@ -1,5 +1,8 @@
 """Tests for NewsDataService normalization (no network)."""
 
+import sys
+import types
+
 import pytest
 
 import app.services.news_data as news_module
@@ -68,3 +71,44 @@ def test_provider_failure_raises_market_data_error():
     service = NewsDataService(fetcher=boom)
     with pytest.raises(MarketDataError, match="provider down"):
         service.get_recent_news("TSLA")
+
+
+def test_empty_result_is_not_cached():
+    # A transient empty response must not pin the ticker for the TTL:
+    # the next call has to reach the provider again.
+    responses = [[], list(LEGACY_SHAPE)]
+    calls = {"n": 0}
+
+    def flaky(ticker):
+        calls["n"] += 1
+        return responses.pop(0)
+
+    service = NewsDataService(fetcher=flaky)
+    assert service.get_recent_news("NVDA") == []
+    items = service.get_recent_news("NVDA")
+    assert len(items) == 1
+    assert calls["n"] == 2
+
+
+def test_search_empty_falls_back_to_ticker_news(monkeypatch):
+    # When yfinance Search returns nothing, the raw fetch falls back
+    # to the ticker feed (fake yfinance module: no network involved).
+    class FakeSearch:
+        def __init__(self, query, news_count=8):
+            self.news = []
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            pass
+
+        @property
+        def news(self):
+            return list(LEGACY_SHAPE)
+
+    fake_yf = types.SimpleNamespace(Search=FakeSearch, Ticker=FakeTicker)
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
+
+    service = NewsDataService()
+    items = service.get_recent_news("ZZZZ")
+    assert len(items) == 1
+    assert items[0].publisher == "Bloomberg"

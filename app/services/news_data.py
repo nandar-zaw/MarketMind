@@ -101,10 +101,18 @@ class NewsDataService:
             if normalized is not None:
                 items.append(normalized)
 
-        _CACHE[symbol] = (time.monotonic(), items)
-        logger.info(
-            "NewsDataService fetched %d headlines for %s", len(items), symbol
-        )
+        if items:
+            # Only cache real coverage. An empty response is often a
+            # transient provider hiccup; caching it would pin the
+            # ticker to "no news" for the whole TTL.
+            _CACHE[symbol] = (time.monotonic(), items)
+            logger.info(
+                "NewsDataService fetched %d headlines for %s", len(items), symbol
+            )
+        else:
+            logger.warning(
+                "NewsDataService got 0 usable headlines for %s", symbol
+            )
         return items[:limit]
 
     def _fetch_raw(self, ticker: str) -> list:
@@ -112,4 +120,16 @@ class NewsDataService:
             return self._fetcher(ticker) or []
         import yfinance as yf
 
+        # Primary source: yfinance Search news. Ticker.news (which
+        # wraps get_news() and its finance.yahoo.com /xhr/ncp website
+        # endpoint) is observed returning empty streams in some
+        # environments, while Search uses the classic search API
+        # family that also powers price lookups. Fall back to the
+        # ticker feed if Search ever comes back empty.
+        try:
+            results = yf.Search(ticker, news_count=10).news
+        except Exception:
+            results = None
+        if results:
+            return results
         return yf.Ticker(ticker).news or []
