@@ -3,14 +3,14 @@
 This document describes each agent in beginner-friendly language.
 
 Phase 1 only defines placeholder classes for some agents.
-The **Data Collector Agent** and **Technical Analysis Agent** are implemented;
-Sentiment still awaits a later phase. Risk and Coordinator already run a demo.
+The **Data Collector Agent**, **Technical Analysis Agent**, and **Sentiment
+Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ---
 
 ## 1. Data Collector Agent
 
-**Status:** Implemented (market data collection only)
+**Status:** Implemented (market data + company info + recent news)
 
 **Input:**
 - Stock ticker symbol (for example `AAPL`)
@@ -21,6 +21,7 @@ Sentiment still awaits a later phase. Risk and Coordinator already run a demo.
 **What it does:**
 - Downloads historical OHLCV price data via `MarketDataService` (yfinance)
 - Collects basic company information (name, sector, industry, exchange, currency, market cap)
+- Fetches recent news headlines via `NewsDataService` (yfinance); a news outage degrades to an empty list instead of failing the data pull
 - Normalizes tickers to uppercase and cleans unusable rows
 - Returns structured Pydantic output (`DataAgentResult`)
 
@@ -28,6 +29,7 @@ Sentiment still awaits a later phase. Risk and Coordinator already run a demo.
 - `ticker`
 - `company_info`
 - `price_history` (oldest → newest)
+- `news` (recent headlines: title, publisher, date, summary)
 - `start_date` / `end_date`
 - `records_count`
 
@@ -66,17 +68,22 @@ Sentiment still awaits a later phase. Risk and Coordinator already run a demo.
 
 ## 3. Sentiment Agent
 
-**Input:**
-- Recent company news and headlines
+**Status:** Implemented
 
-**Future analysis:**
-- Positive / neutral / negative sentiment
-- Summary of recent market mood around the company
+**Input:**
+- Recent company news headlines from DataAgent (`DataAgentResult.news`, fetched by `NewsDataService`)
+- Does **not** download news itself
+
+**Analysis:**
+- An LLM scores sentiment using ONLY the supplied headlines, which are numbered in the prompt; every evidence bullet cites its headline (for example `[1]`)
+- Headlines are treated as untrusted data, never as instructions
+- Model output is parsed deterministically (`SCORE` / `EVIDENCE` / `VERDICT`); score ≥ +0.33 → `bullish`, ≤ −0.33 → `bearish`, otherwise `neutral`
+- Too little coverage, a failed data pull, or missing configuration returns `unavailable` (this agent does not vote) instead of raising an error
 
 **Output:**
-- Sentiment signal
-- Confidence score
-- Short explanation
+- Sentiment signal: `bullish` | `neutral` | `bearish` (never BUY/HOLD/SELL)
+- Confidence score (0.0 – 1.0, the absolute parsed score)
+- Short explanation built from the cited headlines
 
 ---
 
