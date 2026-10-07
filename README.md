@@ -58,7 +58,7 @@ Working today:
 - Risk Manager Agent (volatility, drawdown, short-term swings)
 - Coordinator / Decision Agent (combines evidence into BUY / HOLD / SELL)
 - `GET` or `POST /analyze/{ticker}` returns a structured recommendation
-- Gradio dashboard (`python -m app.ui`): final recommendation, per-agent panels, guardrail audit trail, 1-year price chart with SMA20/SMA50, company header, one-click demo examples
+- Gradio dashboard (`python -m app.ui`): final recommendation, per-agent panels, guardrail audit trail, 1-year price chart with SMA20/SMA50 and 3M/6M/1Y window filter, company header, staged progress, one-click demo examples
 
 Still later work:
 
@@ -138,10 +138,11 @@ Or run the Gradio dashboard (final recommendation, agent panels, price chart):
 python -m app.ui
 ```
 
-Then open the printed local URL (usually http://127.0.0.1:7860), pick a
-ticker, and click **Analyze**. Set `OPENAI_API_KEY` and
-`FUNDAMENTALS_VECTOR_STORE_ID` in `.env` first (see `.env.example`), or the
-LLM-based agents will report `unavailable`.
+Then open the printed local URL (usually http://127.0.0.1:7860). An AAPL
+analysis runs automatically when the page opens, so the dashboard starts
+populated; pick another ticker and click **Analyze** to rerun. Set
+`OPENAI_API_KEY` and `FUNDAMENTALS_VECTOR_STORE_ID` in `.env` first (see
+`.env.example`), or the LLM-based agents will report `unavailable`.
 
 Analyze a ticker (Risk + Coordinator demo):
 

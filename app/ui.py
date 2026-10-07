@@ -19,6 +19,12 @@ fills in automatically.
 The company header and the price chart come from the DataAgent (the
 same data layer the specialists use) and are best-effort: if that
 fetch fails, the recommendation panels still render.
+
+On page load the dashboard runs one analysis for the default
+ticker, so it opens populated instead of blank. While a run is in
+flight the UI reports staged progress, and the chart window
+(3M / 6M / 1Y) re-filters the already-loaded prices instantly,
+without new data or model calls.
 """
 
 import gradio as gr
@@ -118,6 +124,22 @@ def _chart_frame(data: DataAgentResult | None):
     ).dropna()
 
 
+def _filter_chart(frame, window: str):
+    """Slice a full 1-year chart frame to a 3M / 6M window.
+
+    Pure re-filter of data the page already holds (kept in gr.State),
+    so changing the window costs no fetch and no model call.
+    """
+    if frame is None or len(frame) == 0 or window == "1Y":
+        return frame
+    months = {"3M": 3, "6M": 6}.get(window)
+    if months is None:
+        return frame
+    dates = pd.to_datetime(frame["date"])
+    cutoff = dates.max() - pd.DateOffset(months=months)
+    return frame[dates >= cutoff]
+
+
 async def _visual_data(ticker: str) -> DataAgentResult | None:
     """Best-effort DataAgent pull behind the chart/company header."""
     try:
@@ -126,13 +148,19 @@ async def _visual_data(ticker: str) -> DataAgentResult | None:
         return None
 
 
-async def analyze(ticker: str, horizon_days: int):
+async def analyze(
+    ticker: str,
+    horizon_days: int,
+    window: str = "1Y",
+    progress=gr.Progress(),
+):
     """Run the Coordinator once and fill every panel from its result."""
+    progress(0.1, desc="Running the agent pipeline (specialists + risk review)…")
     try:
         final = await _coordinator.analyze(ticker, horizon_days=horizon_days)
     except Exception as exc:  # surface config/API/data errors, not a crash
         error = ("—", "—", f"⚠️ **{type(exc).__name__}:** {exc}")
-        return (*error, *error, *error, *error, *error, None, "")
+        return (*error, *error, *error, *error, *error, None, "", None)
     by_agent = {r.agent_name: r for r in final.agent_results}
     final_values = (
         _badge(final.recommendation),
@@ -140,15 +168,18 @@ async def analyze(ticker: str, horizon_days: int):
         f"{final.explanation}\n\n_Horizon: {final.horizon_days} trading days._"
         + _guardrail_lines(final),
     )
+    progress(0.8, desc="Building price chart and company header…")
     data = await _visual_data(final.ticker)
+    frame = _chart_frame(data)
     return (
         *final_values,
         *_panel_values(by_agent.get("fundamental_agent")),
         *_panel_values(by_agent.get("technical_agent")),
         *_panel_values(by_agent.get("sentiment_agent")),
         *_panel_values(by_agent.get("risk_agent")),
-        _chart_frame(data),
+        _filter_chart(frame, window),
         _company_markdown(data),
+        frame,
     )
 
 
@@ -198,6 +229,12 @@ with gr.Blocks(title="MarketMind") as demo:
         color="Series",
         height=320,
     )
+    chart_range = gr.Radio(
+        choices=["3M", "6M", "1Y"],
+        value="1Y",
+        label="Chart window (re-filters instantly, no new analysis)",
+    )
+    chart_state = gr.State(value=None)
     fundamental_outputs = _agent_panel("Fundamental Analysis")
     technical_outputs = _agent_panel("Technical Analysis")
     sentiment_outputs = _agent_panel("Sentiment Analysis")
@@ -211,16 +248,29 @@ with gr.Blocks(title="MarketMind") as demo:
         *risk_outputs,
         chart_output,
         company_output,
+        chart_state,
     ]
+    all_inputs = [ticker_input, horizon_input, chart_range]
 
     analyze_button.click(
         fn=analyze,
-        inputs=[ticker_input, horizon_input],
+        inputs=all_inputs,
         outputs=all_outputs,
     )
+    # Open populated, not blank: run the default analysis on load.
+    demo.load(
+        fn=analyze,
+        inputs=all_inputs,
+        outputs=all_outputs,
+    )
+    chart_range.change(
+        fn=_filter_chart,
+        inputs=[chart_state, chart_range],
+        outputs=chart_output,
+    )
     gr.Examples(
-        examples=[["AAPL", 5], ["TSLA", 5], ["NVDA", 10]],
-        inputs=[ticker_input, horizon_input],
+        examples=[["AAPL", 5, "1Y"], ["TSLA", 5, "6M"], ["NVDA", 10, "3M"]],
+        inputs=all_inputs,
         outputs=all_outputs,
         fn=analyze,
         run_on_click=True,
