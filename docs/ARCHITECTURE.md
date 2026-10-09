@@ -58,14 +58,16 @@ flowchart TD
 
 ## Data Agent Role
 
-The **Data Collector Agent** supplies information to the other agents.
+The **Data Collector Agent** is the shared market-data source for the pipeline.
 
-Examples of data it will provide later:
+The Coordinator loads DataAgent **once** per request, then shares the result:
 
-- historical stock prices
-- volume
-- basic company information
-- inputs needed by technical, sentiment, and fundamental agents
+- historical OHLCV prices → Technical Agent + Risk Agent
+- recent news headlines → Sentiment Agent
+- basic company / fund metadata → available on `DataAgentResult.company_info`
+
+**Exception:** the Fundamental Agent uses its own SEC-filing vector store (RAG),
+not DataAgent. That fits single-company analysis better than the S&P 500 (`SPY`) focus.
 
 ## Request Flow (Future)
 

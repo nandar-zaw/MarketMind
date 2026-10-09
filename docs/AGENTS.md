@@ -36,6 +36,12 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 **What it does not do:**
 - Technical indicators, sentiment, fundamentals, risk scoring, or BUY/HOLD/SELL decisions
 
+**Who consumes this data:**
+- **Technical Agent** → `price_history` (OHLCV)
+- **Sentiment Agent** → `news` headlines
+- **Risk Agent / Coordinator** → same OHLCV (Coordinator loads DataAgent once, then shares it)
+- **Fundamental Agent** → does **not** use DataAgent; it reads SEC filings from its own vector store (company-level RAG). For the S&P 500 (`SPY`) focus, that agent is often `unavailable`.
+
 ---
 
 ## 2. Technical Analysis Agent

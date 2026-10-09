@@ -15,8 +15,6 @@ from app.agents.sentiment_agent import SentimentAgent
 from app.agents.technical_agent import TechnicalAgent
 from app.main import app
 from app.models.schemas import AgentResult, AnalysisRequest
-from app.services.market_data import MarketDataService
-
 client = TestClient(app)
 
 
@@ -95,7 +93,7 @@ def test_high_risk_cannot_stay_as_buy():
     class BullishStub(BaseAgent):
         name = "technical_agent"
 
-        async def analyze(self, ticker: str):
+        async def analyze(self, ticker: str, **kwargs):
             return AgentResult(
                 agent_name=self.name,
                 signal="bullish",
@@ -125,15 +123,17 @@ def test_analyze_endpoint_rejects_bad_ticker():
 
 
 def test_analyze_endpoint_returns_recommendation(monkeypatch):
+    """Endpoint should run through Coordinator using injected price data."""
     monkeypatch.setattr(
-        MarketDataService,
-        "get_price_history",
-        lambda self, ticker, days=90: make_prices(drift=0.002, daily_vol=0.01),
+        "app.main.CoordinatorAgent",
+        lambda: CoordinatorAgent(
+            price_fetcher=lambda **_: make_prices(drift=0.002, daily_vol=0.01),
+        ),
     )
-    response = client.post("/analyze/AAPL")
+    response = client.post("/analyze/SPY")
     assert response.status_code == 200
     body = response.json()
-    assert body["ticker"] == "AAPL"
+    assert body["ticker"] == "SPY"
     assert body["recommendation"] in {"BUY", "HOLD", "SELL"}
     assert "guardrails" in body
     assert len(body["agent_results"]) >= 4
