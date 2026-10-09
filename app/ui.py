@@ -246,26 +246,79 @@ _CUSTOM_CSS = """
 
 footer, .svelte-1edxm74 { display: none !important; }
 
-/* Keep Market / Horizon / Analyze controls on one aligned baseline. */
-.mm-controls {
-  align-items: end !important;
-  gap: 0.75rem !important;
+/* Premium horizontal control toolbar */
+.mm-toolbar {
+  border: 1px solid var(--mm-line) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, rgba(22, 34, 30, 0.95), rgba(12, 20, 17, 0.98)) !important;
+  padding: 0.95rem 1.05rem 1.05rem !important;
+  margin: 0.35rem 0 1rem !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
 }
-.mm-controls > div {
+.mm-toolbar-caption {
+  margin: 0 0 0.75rem;
+  color: var(--mm-muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+.mm-toolbar-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-end !important;
+  gap: 0.85rem !important;
+  flex-wrap: wrap !important;
+}
+.mm-field {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.35rem !important;
+  min-width: 0 !important;
+}
+.mm-field-action {
   display: flex !important;
   flex-direction: column !important;
   justify-content: flex-end !important;
+  min-width: 160px !important;
 }
-.mm-controls .mm-analyze-btn {
-  min-height: 42px !important;
-  height: 42px !important;
-  align-self: end !important;
-  margin-bottom: 0.15rem !important;
-}
-.mm-controls-caption {
-  margin: 0 0 0.35rem;
+.mm-label {
+  display: block;
+  margin: 0;
+  padding: 0;
   color: var(--mm-muted);
-  font-size: 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent !important;
+  border: none !important;
+}
+.mm-label-spacer {
+  visibility: hidden;
+  height: 0.95rem;
+}
+.mm-toolbar .mm-analyze-btn,
+.mm-toolbar button {
+  min-height: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+  box-shadow: 0 6px 18px rgba(61, 207, 154, 0.22);
+}
+.mm-toolbar .wrap,
+.mm-toolbar .container,
+.mm-toolbar .form,
+.mm-toolbar .block {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.mm-toolbar input,
+.mm-toolbar .secondary-wrap,
+.mm-toolbar [data-testid="dropdown"],
+.mm-toolbar .svelte-select-wrap {
+  border-radius: 12px !important;
 }
 """
 
@@ -598,9 +651,14 @@ theme = gr.themes.Soft(
     block_background_fill=_PANEL,
     block_border_color=_GRID,
     block_label_text_color=_MUTED,
+    block_label_background_fill="transparent",
+    block_label_border_width="0px",
+    block_title_text_color=_MUTED,
     button_primary_background_fill=_ACCENT,
     button_primary_text_color="#04140f",
     border_color_primary=_GRID,
+    input_background_fill="#0f1815",
+    input_border_color=_GRID,
 )
 
 with gr.Blocks(title="MarketMind") as demo:
@@ -618,32 +676,37 @@ with gr.Blocks(title="MarketMind") as demo:
         """
     )
 
-    gr.HTML(
-        '<p class="mm-controls-caption">'
-        "Market defaults to SPY (S&amp;P 500 ETF via Yahoo Finance)."
-        "</p>"
-    )
-    with gr.Row(elem_classes=["mm-controls"]):
-        ticker_input = gr.Dropdown(
-            choices=TICKERS,
-            value=SP500_SYMBOL,
-            label="Market",
-            scale=2,
-            container=True,
+    with gr.Group(elem_classes=["mm-toolbar"]):
+        gr.HTML(
+            '<p class="mm-toolbar-caption">'
+            "Analyze the S&amp;P 500 via <strong>SPY</strong> · Yahoo Finance data · "
+            "multi-agent recommendation"
+            "</p>"
         )
-        horizon_input = gr.Dropdown(
-            choices=HORIZONS,
-            value=5,
-            label="Horizon (trading days)",
-            scale=1,
-            container=True,
-        )
-        analyze_button = gr.Button(
-            "Analyze market",
-            variant="primary",
-            scale=1,
-            elem_classes=["mm-analyze-btn"],
-        )
+        with gr.Row(elem_classes=["mm-toolbar-row"]):
+            with gr.Column(scale=3, min_width=180, elem_classes=["mm-field"]):
+                gr.HTML('<span class="mm-label">Market</span>')
+                ticker_input = gr.Dropdown(
+                    choices=TICKERS,
+                    value=SP500_SYMBOL,
+                    show_label=False,
+                    container=False,
+                )
+            with gr.Column(scale=2, min_width=150, elem_classes=["mm-field"]):
+                gr.HTML('<span class="mm-label">Horizon (trading days)</span>')
+                horizon_input = gr.Dropdown(
+                    choices=HORIZONS,
+                    value=5,
+                    show_label=False,
+                    container=False,
+                )
+            with gr.Column(scale=2, min_width=170, elem_classes=["mm-field-action"]):
+                gr.HTML('<span class="mm-label mm-label-spacer">Action</span>')
+                analyze_button = gr.Button(
+                    "Analyze market",
+                    variant="primary",
+                    elem_classes=["mm-analyze-btn"],
+                )
 
     decision_out = gr.HTML(value=_idle_decision())
     snapshot_out = gr.HTML(value=_idle_snapshot())
