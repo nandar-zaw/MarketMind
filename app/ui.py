@@ -581,7 +581,7 @@ theme = gr.themes.Soft(
     border_color_primary=_GRID,
 )
 
-with gr.Blocks(title="MarketMind", theme=theme, css=_CUSTOM_CSS) as demo:
+with gr.Blocks(title="MarketMind") as demo:
     gr.HTML(
         """
         <div class="mm-hero">
@@ -660,4 +660,4 @@ with gr.Blocks(title="MarketMind", theme=theme, css=_CUSTOM_CSS) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(theme=theme, css=_CUSTOM_CSS)
