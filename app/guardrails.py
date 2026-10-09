@@ -42,7 +42,7 @@ ALLOWED_SPECIALIST_SIGNALS = {
 }
 ALLOWED_RISK_SIGNALS = {"low", "medium", "high"}
 ALLOWED_TOOLS = {
-    "get_price_history": {"min_days": 20, "max_days": 252},
+    "get_market_data": {"periods": {"3mo", "6mo", "1y"}},
 }
 
 PROMPT_INJECTION_MARKERS = (
@@ -134,12 +134,13 @@ def tool_guardrail(tool_name: str, arguments: dict[str, Any]) -> tuple[dict[str,
             f"Tool '{tool_name}' is not on the allowlist.",
         )
 
-    days = int(arguments.get("days", 90))
-    if days < spec["min_days"] or days > spec["max_days"]:
+    period = str(arguments.get("period", "1y"))
+    if period not in spec["periods"]:
+        allowed = ", ".join(sorted(spec["periods"]))
         raise GuardrailTripwire(
             "tool",
             "lookback_limit",
-            f"get_price_history days must be between {spec['min_days']} and {spec['max_days']}.",
+            f"{tool_name} period must be one of: {allowed}.",
         )
 
     ticker = arguments.get("ticker", "")
@@ -150,12 +151,12 @@ def tool_guardrail(tool_name: str, arguments: dict[str, Any]) -> tuple[dict[str,
             "Tool calls must use a validated 1-5 letter ticker.",
         )
 
-    safe_args = {"ticker": str(ticker).upper(), "days": days}
+    safe_args = {"ticker": str(ticker).upper(), "period": period}
     event = GuardrailEvent(
         kind="tool",
         name="allowlist_and_limits",
         passed=True,
-        detail=f"Allowed {tool_name}({safe_args['ticker']}, days={days}).",
+        detail=f"Allowed {tool_name}({safe_args['ticker']}, period={period}).",
     )
     return safe_args, event
 

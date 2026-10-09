@@ -115,13 +115,14 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 **Status:** implemented for the classroom demo.
 
 **Input:**
-- Price history (Close) from the market-data tool
+- About one year of prices, shared by the Coordinator from the Data Agent
 - Optional signals from other agents (event pressure)
 
-**Analysis:**
+**Analysis (risk level uses the last 90 trading days):**
 - Annualized volatility
 - Max drawdown
 - 5-day return / latest daily move
+- Volatility spike: recent volatility at least 1.5x the 1-year baseline counts as event pressure
 - LOW / MEDIUM / HIGH risk level
 
 **Output:**
@@ -139,11 +140,11 @@ This agent does **not** output BUY/SELL. It is a safety overlay for the Coordina
 
 **Input:**
 - User ticker (checked by an **input guardrail**)
-- Price history from `get_price_history` (checked by a **tool guardrail**)
+- One Data Agent call (`get_market_data`, 1 year; checked by a **tool guardrail**), shared with Technical, Sentiment, Fundamental, and Risk
 - Results from Technical, Sentiment, Fundamental, and Risk agents
 
 **Analysis:**
-- Run specialist agents; unimplemented ones are `unavailable` and do not vote
+- Run specialist agents; any agent that fails or cannot run is `unavailable` and does not vote
 - Ask Risk Manager to review
 - Blend live votes; if Technical is still missing, use a labeled 5-day return context
 - **Output guardrail:** HIGH risk cannot remain a BUY
