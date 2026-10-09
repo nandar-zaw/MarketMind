@@ -109,6 +109,35 @@ _CUSTOM_CSS = """
   opacity: 0.85;
 }
 
+.mm-disclaimer {
+  margin: 0.9rem 0 0.35rem;
+  padding: 0.95rem 1.1rem;
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  border-radius: 14px;
+  background: linear-gradient(
+    145deg,
+    rgba(240, 180, 41, 0.14),
+    rgba(16, 26, 23, 0.96) 55%
+  );
+}
+.mm-disclaimer-title {
+  margin: 0 0 0.4rem;
+  color: var(--mm-warn);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mm-disclaimer p {
+  margin: 0;
+  color: #e7dfc8;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.mm-disclaimer strong {
+  color: var(--mm-text);
+}
+
 .mm-decision {
   border: 1px solid var(--mm-line);
   border-radius: 18px;
@@ -677,7 +706,10 @@ def _summary_html(final: FinalRecommendation) -> str:
     </div>
   </div>
   <ul class="mm-summary-bullets">{bullet_html}</ul>
-  <p class="mm-summary-note">Course demonstration only. Not financial advice.</p>
+  <p class="mm-summary-note">
+    Educational prediction only — not financial advice. MarketMind is not
+    responsible for any investment decisions or losses.
+  </p>
 </div>
 """
 
@@ -1064,7 +1096,33 @@ def _api_footer_html() -> str:
   <p class="mm-api-note">
     MarketMind focuses on <strong>SPY</strong> (S&amp;P 500 ETF proxy).
     No SEC file-storage / vector-store API is required for the default path.
-    Course demonstration only — not financial advice.
+  </p>
+  <p class="mm-api-note">
+    <strong>Disclaimer:</strong> MarketMind is an academic course demonstration only.
+    Outputs such as BUY / HOLD / SELL are educational predictions / model signals,
+    <strong>not financial advice</strong>. This platform does not provide investment,
+    trading, tax, or legal advice, and it does <strong>not</strong> recommend that
+    anyone buy or sell any security. You are solely responsible for any decisions
+    you make. The authors, developers, and affiliated institutions accept
+    <strong>no responsibility or liability</strong> for any loss, damage, or
+    consequence arising from use of this software or its outputs.
+  </p>
+</div>
+"""
+
+
+def _disclaimer_banner_html() -> str:
+    """Prominent disclaimer shown near the top of the dashboard."""
+    return """
+<div class="mm-disclaimer" role="note" aria-label="Important disclaimer">
+  <div class="mm-disclaimer-title">Important disclaimer</div>
+  <p>
+    <strong>This is not financial advice.</strong>
+    MarketMind only produces educational predictions / signals for a course project.
+    The platform never provides advice to buy or sell any stock or ETF, and it is
+    <strong>not responsible</strong> for any profit, loss, or other outcome from
+    decisions made using these results. Always do your own research or consult a
+    licensed professional before investing.
   </p>
 </div>
 """
@@ -1101,10 +1159,11 @@ with gr.Blocks(title="MarketMind") as demo:
             Fundamental, and Risk signals coordinated into one explainable
             recommendation.
           </p>
-          <p class="mm-hero-note">Course demonstration only. Not financial advice.</p>
+          <p class="mm-hero-note">Academic course project · educational predictions only</p>
         </div>
         """
     )
+    gr.HTML(value=_disclaimer_banner_html())
 
     with gr.Group(elem_classes=["mm-toolbar"]):
         gr.HTML(

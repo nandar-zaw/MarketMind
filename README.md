@@ -5,6 +5,15 @@
 MarketMind is an academic course project for AI Engineering.
 It is **not** a production trading system.
 
+### Disclaimer (important)
+
+**This is not financial advice.** MarketMind only produces educational
+predictions / model signals for a course project. It does **not** advise
+anyone to buy or sell any stock or ETF. You are solely responsible for any
+decisions you make. The authors, developers, and affiliated institutions
+accept **no responsibility or liability** for any loss, damage, or other
+consequence arising from use of this software or its outputs.
+
 The goal is to demonstrate:
 
 - multi-agent AI concepts
