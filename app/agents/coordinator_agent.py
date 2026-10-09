@@ -1,23 +1,24 @@
 """
 Coordinator / Decision Agent.
 
-Job: gather specialist signals, ask Risk Manager to review them, then
-produce one BUY / HOLD / SELL recommendation for the next 5 trading days.
+Job: ask the Data Agent for prices, company info, and news ONCE, share
+that data with the specialist agents, ask the Risk Manager to review
+their signals, then produce one BUY / HOLD / SELL recommendation.
 
-Until Technical / Sentiment / Fundamental agents are implemented, those
-signals are marked ``unavailable`` and do not vote. The Coordinator then
-uses a small, explicit 5-day return context plus the Risk overlay. That
-interim vote is replaced automatically when teammate agents start
-returning real ``AgentResult`` objects.
+A specialist that fails or cannot run is marked ``unavailable`` and does
+not vote; one broken agent never sinks the whole decision. If the
+Technical agent is unavailable, the Coordinator falls back to a small,
+labeled short-horizon return vote so price action is still represented.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import inspect
 
 import pandas as pd
 
 from app.agents.base_agent import BaseAgent
+from app.agents.data_agent import DataAgent
 from app.agents.fundamental_agent import FundamentalAgent
 from app.agents.risk_agent import RiskAgent
 from app.agents.sentiment_agent import SentimentAgent
@@ -30,8 +31,14 @@ from app.guardrails import (
     tool_guardrail,
     tool_output_guardrail,
 )
-from app.models.schemas import AgentResult, FinalRecommendation, GuardrailEvent
-from app.services.market_data import MarketDataError, MarketDataService
+from app.models.schemas import (
+    AgentResult,
+    DataAgentResult,
+    FinalRecommendation,
+    GuardrailEvent,
+)
+
+MARKET_DATA_PERIOD = "1y"
 
 SIGNAL_SCORE = {
     "bullish": 1.0,
@@ -57,27 +64,28 @@ class CoordinatorAgent(BaseAgent):
 
     def __init__(
         self,
-        market_data: MarketDataService | None = None,
+        data_agent: DataAgent | None = None,
         risk_agent: RiskAgent | None = None,
         specialists: dict[str, BaseAgent] | None = None,
-        price_fetcher: Callable[..., Awaitable[pd.DataFrame] | pd.DataFrame] | None = None,
     ):
-        self.market_data = market_data or MarketDataService()
+        self.data_agent = data_agent or DataAgent()
         self.risk_agent = risk_agent or RiskAgent()
         self.specialists = specialists or {
-            "technical_agent": TechnicalAgent(),
-            "sentiment_agent": SentimentAgent(),
+            "technical_agent": TechnicalAgent(data_agent=self.data_agent),
+            "sentiment_agent": SentimentAgent(data_agent=self.data_agent),
             "fundamental_agent": FundamentalAgent(),
         }
-        self.price_fetcher = price_fetcher
 
     async def analyze(self, ticker: str, horizon_days: int = 5) -> FinalRecommendation:
         guardrails: list[GuardrailEvent] = []
         ticker, input_events = input_guardrail(ticker, horizon_days)
         guardrails.extend(input_events)
 
-        prices = await self._load_prices(ticker, guardrails)
-        specialist_results = await self._collect_specialists(ticker)
+        data = await self._load_market_data(ticker, guardrails)
+        prices = _to_frame(data)
+        guardrails.append(tool_output_guardrail(prices))
+
+        specialist_results = await self._collect_specialists(ticker, data)
         risk_result = await self.risk_agent.analyze(
             ticker,
             price_history=prices,
@@ -111,33 +119,35 @@ class CoordinatorAgent(BaseAgent):
         final, _ = decision_output_guardrail(draft, risk_signal=risk_result.signal)
         return final
 
-    async def _load_prices(self, ticker: str, guardrails: list[GuardrailEvent]) -> pd.DataFrame:
+    async def _load_market_data(
+        self, ticker: str, guardrails: list[GuardrailEvent]
+    ) -> DataAgentResult:
         safe_args, tool_event = tool_guardrail(
-            "get_price_history",
-            {"ticker": ticker, "days": 90},
+            "get_market_data",
+            {"ticker": ticker, "period": MARKET_DATA_PERIOD},
         )
         guardrails.append(tool_event)
         try:
-            if self.price_fetcher is not None:
-                prices = self.price_fetcher(**safe_args)
-                if hasattr(prices, "__await__"):
-                    prices = await prices  # type: ignore[misc]
-            else:
-                prices = self.market_data.get_price_history(
-                    safe_args["ticker"],
-                    days=safe_args["days"],
-                )
-        except MarketDataError as exc:
-            raise GuardrailTripwire("tool", "market_data_failure", str(exc)) from exc
+            return await self.data_agent.analyze(
+                safe_args["ticker"], period=safe_args["period"]
+            )
+        except Exception as exc:
+            raise GuardrailTripwire(
+                "tool",
+                "market_data_failure",
+                f"Could not load market data for {ticker} ({type(exc).__name__}: {exc}).",
+            ) from exc
 
-        guardrails.append(tool_output_guardrail(prices))
-        return prices
-
-    async def _collect_specialists(self, ticker: str) -> list[AgentResult]:
+    async def _collect_specialists(
+        self, ticker: str, data: DataAgentResult
+    ) -> list[AgentResult]:
         results: list[AgentResult] = []
         for name, agent in self.specialists.items():
             try:
-                raw = await agent.analyze(ticker)
+                if _accepts_data(agent):
+                    raw = await agent.analyze(ticker, data=data)
+                else:
+                    raw = await agent.analyze(ticker)
                 results.append(specialist_output_guardrail(raw))
             except NotImplementedError:
                 results.append(
@@ -165,6 +175,24 @@ def _unavailable(name: str, explanation: str) -> AgentResult:
             confidence=0.0,
             explanation=explanation,
         )
+    )
+
+
+def _accepts_data(agent: BaseAgent) -> bool:
+    """Agents built on the DataAgent contract take ``data=``; others only a ticker."""
+    return "data" in inspect.signature(agent.analyze).parameters
+
+
+def _to_frame(data: DataAgentResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Date": [bar.date for bar in data.price_history],
+            "Open": [bar.open for bar in data.price_history],
+            "High": [bar.high for bar in data.price_history],
+            "Low": [bar.low for bar in data.price_history],
+            "Close": [bar.close for bar in data.price_history],
+            "Volume": [bar.volume for bar in data.price_history],
+        }
     )
 
 

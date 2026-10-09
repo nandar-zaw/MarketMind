@@ -32,13 +32,20 @@ def test_input_guardrail_rejects_bad_ticker(bad):
 
 def test_tool_guardrail_blocks_unknown_tool():
     with pytest.raises(GuardrailTripwire) as err:
-        tool_guardrail("delete_files", {"ticker": "AAPL", "days": 90})
+        tool_guardrail("delete_files", {"ticker": "AAPL", "period": "1y"})
     assert err.value.name == "tool_allowlist"
 
 
+def test_tool_guardrail_allows_one_year_of_market_data():
+    safe_args, event = tool_guardrail("get_market_data", {"ticker": "aapl", "period": "1y"})
+    assert safe_args == {"ticker": "AAPL", "period": "1y"}
+    assert event.passed is True
+
+
 def test_tool_guardrail_blocks_too_much_history():
-    with pytest.raises(GuardrailTripwire):
-        tool_guardrail("get_price_history", {"ticker": "AAPL", "days": 5000})
+    with pytest.raises(GuardrailTripwire) as err:
+        tool_guardrail("get_market_data", {"ticker": "AAPL", "period": "10y"})
+    assert err.value.name == "lookback_limit"
 
 
 def test_tool_output_guardrail_requires_close_column():
