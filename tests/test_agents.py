@@ -79,7 +79,52 @@ def test_risk_agent_flags_low_volatility():
 
 
 def test_coordinator_uses_stub_specialists_and_risk():
-    coordinator = CoordinatorAgent(price_fetcher=lambda **_: make_prices(daily_vol=0.008, drift=0.004))
+    # Explicit specialist stubs (the test's name always promised
+    # them): until now the real specialists ran here, and the
+    # "unavailable" assertion below only passed while one of them
+    # happened to be starved of data. Stubbing makes the degradation
+    # path deterministic and keeps this test offline.
+    class BullishStub(BaseAgent):
+        name = "technical_agent"
+
+        async def analyze(self, ticker: str):
+            return AgentResult(
+                agent_name=self.name,
+                signal="bullish",
+                confidence=0.7,
+                explanation="Stub technicals.",
+            )
+
+    class UnavailableStub(BaseAgent):
+        name = "sentiment_agent"
+
+        async def analyze(self, ticker: str):
+            return AgentResult(
+                agent_name=self.name,
+                signal="unavailable",
+                confidence=0.0,
+                explanation="Stub unavailable specialist.",
+            )
+
+    class BuyStub(BaseAgent):
+        name = "fundamental_agent"
+
+        async def analyze(self, ticker: str):
+            return AgentResult(
+                agent_name=self.name,
+                signal="buy",
+                confidence=0.6,
+                explanation="Stub fundamentals.",
+            )
+
+    coordinator = CoordinatorAgent(
+        price_fetcher=lambda **_: make_prices(daily_vol=0.008, drift=0.004),
+        specialists={
+            "technical_agent": BullishStub(),
+            "sentiment_agent": UnavailableStub(),
+            "fundamental_agent": BuyStub(),
+        },
+    )
     result = asyncio.run(coordinator.analyze("aapl"))
     assert result.ticker == "AAPL"
     assert result.recommendation in {"BUY", "HOLD", "SELL"}
