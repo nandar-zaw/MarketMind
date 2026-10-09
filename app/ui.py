@@ -245,6 +245,28 @@ _CUSTOM_CSS = """
 }
 
 footer, .svelte-1edxm74 { display: none !important; }
+
+/* Keep Market / Horizon / Analyze controls on one aligned baseline. */
+.mm-controls {
+  align-items: end !important;
+  gap: 0.75rem !important;
+}
+.mm-controls > div {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+}
+.mm-controls .mm-analyze-btn {
+  min-height: 42px !important;
+  height: 42px !important;
+  align-self: end !important;
+  margin-bottom: 0.15rem !important;
+}
+.mm-controls-caption {
+  margin: 0 0 0.35rem;
+  color: var(--mm-muted);
+  font-size: 0.85rem;
+}
 """
 
 
@@ -596,21 +618,32 @@ with gr.Blocks(title="MarketMind") as demo:
         """
     )
 
-    with gr.Row(equal_height=True):
+    gr.HTML(
+        '<p class="mm-controls-caption">'
+        "Market defaults to SPY (S&amp;P 500 ETF via Yahoo Finance)."
+        "</p>"
+    )
+    with gr.Row(elem_classes=["mm-controls"]):
         ticker_input = gr.Dropdown(
             choices=TICKERS,
             value=SP500_SYMBOL,
             label="Market",
-            info="S&P 500 via SPY (Yahoo Finance)",
             scale=2,
+            container=True,
         )
         horizon_input = gr.Dropdown(
             choices=HORIZONS,
             value=5,
             label="Horizon (trading days)",
             scale=1,
+            container=True,
         )
-        analyze_button = gr.Button("Analyze market", variant="primary", scale=1)
+        analyze_button = gr.Button(
+            "Analyze market",
+            variant="primary",
+            scale=1,
+            elem_classes=["mm-analyze-btn"],
+        )
 
     decision_out = gr.HTML(value=_idle_decision())
     snapshot_out = gr.HTML(value=_idle_snapshot())
