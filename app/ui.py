@@ -15,10 +15,12 @@ summary / recommendation. Chart windows re-filter without a new analysis.
 from __future__ import annotations
 
 import html
+import os
 from typing import Optional
 
 import gradio as gr
 import matplotlib
+from dotenv import load_dotenv
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -28,6 +30,8 @@ from app.agents.coordinator_agent import CoordinatorAgent
 from app.agents.data_agent import DataAgent
 from app.models.schemas import AgentResult, DataAgentResult, FinalRecommendation
 from app.utils.symbols import SP500_SYMBOL
+
+load_dotenv(override=True)
 
 TICKERS = [SP500_SYMBOL]
 HORIZONS = [3, 5, 10]
@@ -328,7 +332,57 @@ _CUSTOM_CSS = """
   line-height: 1.4;
 }
 
-footer, .svelte-1edxm74 { display: none !important; }
+/* Hide Gradio's default footer; we render our own API footer. */
+footer.svelte-app-footer,
+.gradio-container > footer {
+  display: none !important;
+}
+
+.mm-api-footer {
+  margin: 1.6rem 0 0.4rem;
+  padding: 1.05rem 1.15rem 1.2rem;
+  border: 1px solid var(--mm-line);
+  border-radius: 16px;
+  background: rgba(12, 20, 17, 0.92);
+}
+.mm-api-footer h3 {
+  margin: 0 0 0.65rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--mm-text);
+}
+.mm-api-footer table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.mm-api-footer th,
+.mm-api-footer td {
+  text-align: left;
+  padding: 0.45rem 0.55rem;
+  border-top: 1px solid var(--mm-line);
+  vertical-align: top;
+  color: #c9d8d0;
+}
+.mm-api-footer th {
+  color: var(--mm-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-top: none;
+}
+.mm-api-footer .mm-api-name {
+  color: var(--mm-accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mm-api-footer .mm-api-note {
+  margin: 0.75rem 0 0;
+  color: var(--mm-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 
 /* Premium horizontal control toolbar */
 .mm-toolbar {
@@ -965,6 +1019,57 @@ def refresh_chart(chart_data: Optional[dict | pd.DataFrame], chart_window: str):
     return plot_price_history(chart_data, chart_window or "1Y")
 
 
+def _api_footer_html() -> str:
+    """Footer explaining which external APIs power each MarketMind feature."""
+    openai_ready = bool(os.getenv("OPENAI_API_KEY"))
+    openai_status = (
+        "Configured — Sentiment can use LLM scoring"
+        if openai_ready
+        else "Not set — Sentiment uses keyword fallback on headlines"
+    )
+    return f"""
+<div class="mm-api-footer">
+  <h3>APIs &amp; data sources</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>API / library</th>
+        <th>Used for</th>
+        <th>Used by</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mm-api-name">Yahoo Finance via yfinance</td>
+        <td>Daily &amp; intraday OHLCV prices, fund metadata, fundamental metrics, news headlines, 1D chart bars</td>
+        <td>DataAgent → Technical, Sentiment, Fundamental, Risk, price chart</td>
+      </tr>
+      <tr>
+        <td class="mm-api-name">OpenAI API</td>
+        <td>Optional LLM sentiment scoring when <code>OPENAI_API_KEY</code> is set</td>
+        <td>Sentiment Agent · <em>{html.escape(openai_status)}</em></td>
+      </tr>
+      <tr>
+        <td class="mm-api-name">FastAPI</td>
+        <td>HTTP API (<code>/health</code>, <code>/analyze/{{ticker}}</code>)</td>
+        <td><code>app/main.py</code> · run with <code>uvicorn app.main:app</code></td>
+      </tr>
+      <tr>
+        <td class="mm-api-name">Gradio</td>
+        <td>This interactive dashboard UI</td>
+        <td><code>python -m app.ui</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="mm-api-note">
+    MarketMind focuses on <strong>SPY</strong> (S&amp;P 500 ETF proxy).
+    No SEC file-storage / vector-store API is required for the default path.
+    Course demonstration only — not financial advice.
+  </p>
+</div>
+"""
+
+
 theme = gr.themes.Soft(
     primary_hue="emerald",
     secondary_hue="slate",
@@ -1077,6 +1182,8 @@ with gr.Blocks(title="MarketMind") as demo:
         inputs=[price_frame_state, chart_window],
         outputs=[price_chart],
     )
+
+    gr.HTML(value=_api_footer_html())
 
 
 if __name__ == "__main__":
