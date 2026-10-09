@@ -46,11 +46,13 @@ For a given ticker (for example `AAPL`), MarketMind will return:
 
 ## Current Status
 
-**Scaffolding is in place, and Risk Manager + Coordinator now run a guarded demo.**
+**Scaffolding is in place. The Data Collector Agent now fetches real market data,
+and Risk Manager + Coordinator run a guarded demo.**
 
 Working today:
 
 - FastAPI `/health`
+- **Data Collector Agent** fetches OHLCV prices + basic company info via yfinance
 - input / tool / output guardrails
 - Risk Manager Agent (volatility, drawdown, short-term swings)
 - Coordinator / Decision Agent (combines evidence into BUY / HOLD / SELL)
@@ -158,12 +160,12 @@ pytest
 
 ## Roadmap (Short Version)
 
-1. Project structure and placeholders (this phase)
-2. Real stock data + Technical Agent
+1. Project structure and placeholders (done)
+2. Real stock data (DataAgent done) + Technical Agent (next)
 3. News + Sentiment Agent
 4. Fundamental Agent
-5. Risk Agent
-6. Coordinator Agent
+5. Risk Agent (done)
+6. Coordinator Agent (done)
 7. Simple ML prediction model
 8. Simple backtesting
 9. Dashboard
