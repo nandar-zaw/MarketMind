@@ -73,7 +73,7 @@ class CoordinatorAgent(BaseAgent):
         self.specialists = specialists or {
             "technical_agent": TechnicalAgent(data_agent=self.data_agent),
             "sentiment_agent": SentimentAgent(data_agent=self.data_agent),
-            "fundamental_agent": FundamentalAgent(),
+            "fundamental_agent": FundamentalAgent(data_agent=self.data_agent),
         }
 
     async def analyze(self, ticker: str, horizon_days: int = 5) -> FinalRecommendation:

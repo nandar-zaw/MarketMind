@@ -83,6 +83,14 @@ class NewsItem(BaseModel):
     summary: str = ""
 
 
+class FilingExcerpt(BaseModel):
+    """One retrieved passage from a company's SEC filings (10-K / 10-Q)."""
+
+    text: str
+    source: str = ""  # filing file name when known
+    score: Optional[float] = None  # retrieval relevance score when provided
+
+
 class DataAgentResult(BaseModel):
     """Structured output from the Data Collector Agent."""
 
@@ -90,6 +98,7 @@ class DataAgentResult(BaseModel):
     company_info: CompanyInfo
     price_history: list[MarketPrice]
     news: list[NewsItem] = Field(default_factory=list)
+    filings: list[FilingExcerpt] = Field(default_factory=list)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     records_count: int

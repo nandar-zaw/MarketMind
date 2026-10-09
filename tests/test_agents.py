@@ -115,7 +115,7 @@ def offline_llm_agents(monkeypatch):
             explanation="Offline test stub for the Sentiment agent.",
         )
 
-    async def fake_fundamental(self, ticker: str):
+    async def fake_fundamental(self, ticker: str, *, data=None):
         return AgentResult(
             agent_name="fundamental_agent",
             signal="hold",
@@ -225,13 +225,24 @@ def test_coordinator_fetches_data_once_and_shares_it():
     assert technical.signal in {"bullish", "neutral", "bearish"}
 
 
-def test_coordinator_returns_guarded_recommendation():
-    coordinator = CoordinatorAgent(data_agent=FakeDataAgent())
+def test_coordinator_uses_stub_specialists_and_risk():
+    # Explicit stubs keep the "unavailable" path deterministic now that
+    # all real specialists vote.
+    coordinator = CoordinatorAgent(
+        data_agent=FakeDataAgent(),
+        specialists={
+            "technical_agent": stub_agent("technical_agent", "bullish", 0.7),
+            "sentiment_agent": stub_agent("sentiment_agent", "unavailable", 0.0),
+            "fundamental_agent": stub_agent("fundamental_agent", "buy", 0.6),
+        },
+    )
     result = asyncio.run(coordinator.analyze("aapl"))
     assert result.ticker == "AAPL"
     assert result.recommendation in {"BUY", "HOLD", "SELL"}
     names = {item.agent_name for item in result.agent_results}
     assert {"technical_agent", "sentiment_agent", "fundamental_agent", "risk_agent"} <= names
+    assert any(item.signal == "unavailable" for item in result.agent_results)
+    assert "sentiment_agent" not in result.explanation
     assert any(event.kind == "input" for event in result.guardrails)
     assert any(event.kind == "tool" for event in result.guardrails)
     assert any(event.kind == "output" for event in result.guardrails)
