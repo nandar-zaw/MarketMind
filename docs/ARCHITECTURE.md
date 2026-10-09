@@ -28,6 +28,71 @@ Technical     Sentiment    Fundamental
          Final Recommendation
 ```
 
+## Big-Picture Architecture (for class)
+
+A fuller view including **DataAgent**, **guardrails**, and data supply. For slides and
+talking points, see also `docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md`.
+
+```mermaid
+flowchart TB
+    subgraph Entry["Entry"]
+        User["User<br/>ticker e.g. SPY"]
+        UI["FastAPI / Gradio UI"]
+    end
+
+    subgraph Safety["Guardrails"]
+        IG["1 Input guardrail"]
+        TG["2 Tool + tool-output guardrail"]
+        OG["6 Decision output guardrail"]
+    end
+
+    subgraph Orch["Orchestration"]
+        Coord["Coordinator Agent"]
+    end
+
+    subgraph DataLayer["Shared data once per request"]
+        Data["Data Collector Agent"]
+    end
+
+    subgraph Specialists["Specialist voters"]
+        Tech["Technical Agent"]
+        Sent["Sentiment Agent"]
+        Fund["Fundamental Agent"]
+    end
+
+    Risk["Risk Manager Agent"]
+    Result["Final Recommendation<br/>BUY / HOLD / SELL"]
+
+    User --> UI --> IG --> Coord
+    Coord --> TG --> Data
+    Data -.->|prices| Tech
+    Data -.->|news| Sent
+    Data -.->|fundamentals| Fund
+    Tech --> Coord
+    Sent --> Coord
+    Fund --> Coord
+    Coord --> Risk --> Coord
+    Coord --> OG --> Result
+```
+
+```text
+User --> UI --> Input guardrail --> Coordinator
+                                      |
+                    Tool guardrail --> DataAgent (once)
+                                      | prices / news / fundamentals
+                 +--------------------+--------------------+
+                 v                    v                    v
+            Technical            Sentiment            Fundamental
+                 |                    |                    |
+                 +--------------------+--------------------+
+                                      v
+                                 Risk Agent
+                                      v
+                         Coordinator blends votes
+                                      v
+                         Output guardrail --> BUY/HOLD/SELL
+```
+
 ## Architecture (classroom-simple)
 
 This Mermaid diagram shows the same flow more clearly, including how the

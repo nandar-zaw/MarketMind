@@ -24,7 +24,136 @@ Only the **Coordinator** (plus the output guardrail) produces the final recommen
 
 ---
 
-## 2. Pipeline Flow
+## 2. Big-Picture Architecture
+
+Use this diagram first in a presentation: it shows **who talks to whom**, where **data** flows, and where **guardrails** sit.
+
+### 2.1 System overview (Mermaid)
+
+```mermaid
+flowchart TB
+    subgraph Entry["Entry"]
+        User["User<br/>ticker e.g. SPY"]
+        UI["FastAPI / Gradio UI"]
+    end
+
+    subgraph Safety["Guardrails"]
+        IG["① Input guardrail<br/>ticker · horizon · injection"]
+        TG["② Tool + tool-output guardrail<br/>allowlist · price schema"]
+        OG["⑥ Decision output guardrail<br/>BUY/HOLD/SELL · HIGH risk blocks BUY"]
+    end
+
+    subgraph Orch["Orchestration"]
+        Coord["Coordinator Agent<br/>blend votes → recommendation"]
+    end
+
+    subgraph DataLayer["Shared data (once per request)"]
+        Data["Data Collector Agent"]
+        Mkt["yfinance<br/>prices · company · fundamentals"]
+        News["News headlines"]
+    end
+
+    subgraph Specialists["Specialist voters"]
+        Tech["Technical Agent<br/>RSI · SMA · MACD · trend"]
+        Sent["Sentiment Agent<br/>news mood"]
+        Fund["Fundamental Agent<br/>valuation · growth · quality"]
+    end
+
+    subgraph Overlay["Safety overlay"]
+        Risk["Risk Manager Agent<br/>vol · drawdown → low/med/high"]
+    end
+
+    Result["Final Recommendation<br/>BUY / HOLD / SELL<br/>+ confidence + explanation + evidence"]
+
+    User --> UI --> IG --> Coord
+    Coord --> TG --> Data
+    Data --> Mkt
+    Data --> News
+    Data -.->|prices| Tech
+    Data -.->|news| Sent
+    Data -.->|fundamentals| Fund
+    Tech --> Coord
+    Sent --> Coord
+    Fund --> Coord
+    Coord --> Risk
+    Risk --> Coord
+    Coord --> OG --> Result
+```
+
+**How to read it:**
+
+| Arrow style | Meaning |
+| --- | --- |
+| Solid | Control flow (who calls whom) |
+| Dashed | Data supply (DataAgent feeds specialists once) |
+| Guardrail boxes | Checks that can **stop** the run (hard) or **rewrite** the answer (soft) |
+
+### 2.2 Classroom ASCII (works on any slide / whiteboard)
+
+```text
++--------------------------------------------------------------------------+
+|                         MARKETMIND BIG PICTURE                           |
++--------------------------------------------------------------------------+
+
+   User  -->  FastAPI / Gradio
+                    |
+                    v
+            +---------------+
+            | 1 INPUT       |  "Is this a real ticker, not an injection?"
+            |   GUARDRAIL   |
+            +-------+-------+
+                    v
+            +---------------+
+            |  COORDINATOR  |  owns the whole run; only agent that
+            |     AGENT     |  may output BUY / HOLD / SELL
+            +-------+-------+
+                    |
+        +-----------+-----------+
+        |           |           |
+        v           v           v
+ +------------+  (once)   +-------------------------------------+
+ | 2 TOOL     |---------->|         DATA COLLECTOR AGENT        |
+ | GUARDRAIL  |           |  prices · news · fundamentals       |
+ +------------+           +------------------+------------------+
+                                             | shared result
+              +------------------------------+------------------------------+
+              |                              |                              |
+              v                              v                              v
+     +-----------------+          +-----------------+          +-----------------+
+     | TECHNICAL       |          | SENTIMENT       |          | FUNDAMENTAL     |
+     | bullish/neutral |          | bullish/neutral |          | bullish/neutral |
+     | /bearish        |          | /bearish        |          | /bearish        |
+     +--------+--------+          +--------+--------+          +--------+--------+
+              |                            |                            |
+              +----------------------------+----------------------------+
+                                           v
+                                  +-----------------+
+                                  | RISK MANAGER    |  low / medium / high
+                                  | (no BUY/SELL)   |
+                                  +--------+--------+
+                                           v
+                                  +-----------------+
+                                  | Coordinator     |  weighted blend
+                                  | blends votes    |
+                                  +--------+--------+
+                                           v
+                                  +-----------------+
+                                  | 6 OUTPUT        |  HIGH risk + BUY -> HOLD
+                                  |   GUARDRAIL     |
+                                  +--------+--------+
+                                           v
+                         FINAL: BUY / HOLD / SELL
+                         + confidence + explanation
+                         + per-agent evidence + audit log
+```
+
+### 2.3 One-sentence architecture
+
+> **Coordinator** loads **Data** once, asks three **specialists** for independent votes, asks **Risk** for a safety level, blends the votes, then **guardrails** ensure the final answer is valid and capital-preserving.
+
+---
+
+## 3. Pipeline Flow (step-by-step)
 
 ```text
 User (ticker, e.g. SPY)
@@ -62,9 +191,9 @@ User (ticker, e.g. SPY)
 
 ---
 
-## 3. What Each Agent Does
+## 4. What Each Agent Does
 
-### 3.1 Data Collector Agent (`data_agent`)
+### 4.1 Data Collector Agent (`data_agent`)
 
 | | |
 | --- | --- |
@@ -84,7 +213,7 @@ Think of it as the **librarian**: gather facts; do not give opinions.
 
 ---
 
-### 3.2 Technical Analysis Agent (`technical_agent`)
+### 4.2 Technical Analysis Agent (`technical_agent`)
 
 | | |
 | --- | --- |
@@ -98,7 +227,7 @@ Never outputs BUY/HOLD/SELL — only a technical vote for the Coordinator.
 
 ---
 
-### 3.3 Sentiment Analysis Agent (`sentiment_agent`)
+### 4.3 Sentiment Analysis Agent (`sentiment_agent`)
 
 | | |
 | --- | --- |
@@ -112,7 +241,7 @@ Headlines are treated as **untrusted data**, never as instructions (anti-injecti
 
 ---
 
-### 3.4 Fundamental Analysis Agent (`fundamental_agent`)
+### 4.4 Fundamental Analysis Agent (`fundamental_agent`)
 
 | | |
 | --- | --- |
@@ -126,7 +255,7 @@ For the S&P 500 (`SPY`) path, fundamentals come from the **API snapshot**, not S
 
 ---
 
-### 3.5 Risk Manager Agent (`risk_agent`)
+### 4.5 Risk Manager Agent (`risk_agent`)
 
 | | |
 | --- | --- |
@@ -140,7 +269,7 @@ It only classifies risk so the Coordinator (and output guardrail) can protect ca
 
 ---
 
-### 3.6 Coordinator Agent (`coordinator_agent`)
+### 4.6 Coordinator Agent (`coordinator_agent`)
 
 | | |
 | --- | --- |
@@ -165,7 +294,7 @@ It only classifies risk so the Coordinator (and output guardrail) can protect ca
 
 ---
 
-## 4. Guardrails — What Are They For?
+## 5. Guardrails — What Are They For?
 
 **Guardrails** are safety rules that wrap the agent pipeline.
 
@@ -182,11 +311,11 @@ Without guardrails, a bad ticker, a broken data pull, or a reckless BUY under HI
 
 ---
 
-## 5. How Guardrails Work
+## 6. How Guardrails Work
 
 There are **three layers** (plus specialist schema checks):
 
-### 5.1 Input guardrails
+### 6.1 Input guardrails
 
 **When:** Before any agent runs.  
 **Purpose:** Reject bad or unsafe user input.
@@ -202,7 +331,7 @@ There are **three layers** (plus specialist schema checks):
 
 ---
 
-### 5.2 Tool guardrails (+ tool-output)
+### 6.2 Tool guardrails (+ tool-output)
 
 **When:** Before / after calling market-data tools.  
 **Purpose:** Only allow approved tools, safe args, and usable results.
@@ -218,7 +347,7 @@ There are **three layers** (plus specialist schema checks):
 
 ---
 
-### 5.3 Output guardrails
+### 6.3 Output guardrails
 
 **Specialist output** (each agent result):
 
@@ -237,7 +366,7 @@ Soft rewrites are **recorded as events** (audit trail for demos / grading).
 
 ---
 
-### 5.4 Hard vs soft (easy talking point)
+### 6.4 Hard vs soft (easy talking point)
 
 ```text
 Hard guardrail  →  stop the request (tripwire)
@@ -250,7 +379,7 @@ Example soft policy for the slide:
 
 ---
 
-## 6. How Agents Interact (one slide)
+## 7. How Agents Interact (one slide)
 
 ```text
 Coordinator owns the run
@@ -271,7 +400,7 @@ Coordinator owns the run
 
 ---
 
-## 7. Demo Talking Points
+## 8. Demo Talking Points
 
 1. **Specialization:** six clear roles; DataAgent has no opinion; Risk has no trade.
 2. **Coordination:** weighted votes, not a single black-box model.
@@ -281,7 +410,7 @@ Coordinator owns the run
 
 ---
 
-## 8. Quick Reference Card
+## 9. Quick Reference Card
 
 | Agent | Question it answers | Signal type |
 | --- | --- | --- |
