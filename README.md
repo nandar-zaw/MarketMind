@@ -26,23 +26,23 @@ The goal is to demonstrate:
 
 ---
 
-## How MarketMind Works (Future Design)
+## How MarketMind Works
 
 MarketMind uses several specialized AI agents.
 Each agent studies a different type of information.
 
 | Agent | What it looks at |
 | --- | --- |
-| **Data Collector Agent** | Downloads stock prices and basic company info |
+| **Data Collector Agent** | Downloads prices, company info, fundamentals, and headlines (yfinance) |
 | **Technical Agent** | Looks at price trends (RSI, SMA, MACD) |
-| **Sentiment Agent** | Looks at news sentiment |
-| **Fundamental Agent** | Looks at company financial information |
+| **Sentiment Agent** | Looks at news sentiment (LLM if key set, else keyword fallback) |
+| **Fundamental Agent** | Looks at yfinance fundamentals from DataAgent |
 | **Risk Agent** | Looks at volatility and risk |
 | **Coordinator Agent** | Combines the results into one recommendation |
 
-### Future final output
+### Final output
 
-For the S&P 500 (symbol `SPY` on Yahoo Finance / yfinance), MarketMind will return:
+For the S&P 500 (symbol `SPY` on Yahoo Finance / yfinance), MarketMind returns:
 
 - **BUY**, **HOLD**, or **SELL**
 - a confidence score
@@ -55,23 +55,20 @@ For the S&P 500 (symbol `SPY` on Yahoo Finance / yfinance), MarketMind will retu
 
 ## Current Status
 
-**Scaffolding is in place. The Data Collector Agent now fetches real market data,
-and Risk Manager + Coordinator run a guarded demo.**
-
 Working today:
 
-- FastAPI `/health`
-- **Data Collector Agent** fetches OHLCV prices + basic company info via yfinance
-- input / tool / output guardrails
-- Risk Manager Agent (volatility, drawdown, short-term swings)
-- Coordinator / Decision Agent (combines evidence into BUY / HOLD / SELL)
-- `GET` or `POST /analyze/{ticker}` returns a structured recommendation
-- live prices via yfinance (through a tool allowlist)
+- FastAPI `/health` and `/analyze/{ticker}`
+- Gradio dashboard with Plotly charts (1D–1Y windows)
+- **Data Collector Agent** — OHLCV, info, fundamentals, headlines via yfinance
+- Technical, Sentiment, Fundamental, Risk, and Coordinator agents
+- input / tool / output guardrails (internal; not shown in the UI)
+- `SPY` as the S&P 500 proxy (`^GSPC` / `SPX` aliases resolve to `SPY`)
 
-Still teammate / later work:
+Still later work:
 
-- Technical, Sentiment, and Fundamental analysis (Coordinator marks them `unavailable` and they do not vote yet)
-- news APIs, ML model, backtesting, dashboard
+- Phase 7 ML prediction model
+- Phase 8 backtesting
+- presentation polish
 
 ---
 
@@ -83,7 +80,8 @@ MarketMind/
 ├── requirements.txt
 ├── .env.example
 ├── app/
-│   ├── main.py
+│   ├── main.py          # FastAPI entry
+│   ├── ui.py            # Gradio dashboard
 │   ├── models/
 │   ├── agents/
 │   ├── services/
@@ -117,11 +115,31 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Optional: copy `.env.example` to `.env`. An OpenAI key enables LLM sentiment;
+without it, Sentiment uses a keyword fallback. Fundamentals do **not** require
+a vector-store ID for SPY.
+
+On Windows, if `python` is not on PATH, use `py -3.12` instead.
+
 ---
 
 ## How to Run
 
-Start the FastAPI app:
+### Option A — Gradio dashboard (recommended)
+
+From the repo root, with the venv active:
+
+```bash
+python -m app.ui
+```
+
+Then open the URL printed in the terminal (usually
+[http://127.0.0.1:7860](http://127.0.0.1:7860)).
+
+Click **Analyze** on `SPY` to run the full multi-agent pipeline and explore
+chart windows without re-running analysis.
+
+### Option B — FastAPI API
 
 ```bash
 uvicorn app.main:app --reload
@@ -141,11 +159,11 @@ Expected `/health` response:
 }
 ```
 
-Analyze the S&P 500 proxy (Risk + Coordinator demo):
+Analyze the S&P 500 proxy:
 
 ```bash
-# easy for a browser demo
-open http://127.0.0.1:8000/analyze/SPY
+# browser
+http://127.0.0.1:8000/analyze/SPY
 
 # or POST
 curl -X POST http://127.0.0.1:8000/analyze/SPY
@@ -173,14 +191,14 @@ pytest
 ## Roadmap (Short Version)
 
 1. Project structure and placeholders (done)
-2. Real stock data (DataAgent done) + Technical Agent (next)
-3. News + Sentiment Agent
-4. Fundamental Agent
+2. Real stock data (DataAgent done) + Technical Agent (done)
+3. News + Sentiment Agent (done)
+4. Fundamental Agent (done)
 5. Risk Agent (done)
 6. Coordinator Agent (done)
 7. Simple ML prediction model
 8. Simple backtesting
-9. Dashboard
+9. Dashboard (Gradio done)
 10. Final testing and presentation
 
 Full details: [docs/ROADMAP.md](docs/ROADMAP.md)
