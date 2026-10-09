@@ -737,7 +737,10 @@ def _idle_summary() -> str:
       <div class="mm-summary-chip-value">—</div>
     </div>
   </div>
-  <p class="mm-summary-note">Course demonstration only. Not financial advice.</p>
+  <p class="mm-summary-note">
+    Educational prediction only — not financial advice. MarketMind is not
+    responsible for any investment decisions or losses.
+  </p>
 </div>
 """
 
