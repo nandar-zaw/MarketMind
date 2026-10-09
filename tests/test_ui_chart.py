@@ -66,7 +66,8 @@ def test_plot_price_history_returns_figure():
     frame = build_price_frame(_sample_data())
     fig = plot_price_history(frame, "3M")
     assert fig is not None
-    assert len(fig.axes) == 1
+    names = {trace.name for trace in fig.data}
+    assert {"Close", "SMA20", "SMA50"} <= names
 
 
 def test_plot_handles_empty_frame():
@@ -79,7 +80,8 @@ def test_plot_daily_1d_uses_intraday_bundle():
     intraday = build_intraday_frame(_sample_intraday_raw())
     fig = plot_price_history({"daily": daily, "intraday": intraday}, "1D")
     assert fig is not None
-    assert "1D" in fig.axes[0].get_title(loc="left")
+    assert "1D" in fig.layout.title.text
+    assert len(fig.data[1].x) == len(intraday)
 
 
 def test_plot_5d_uses_daily_closes():
@@ -87,7 +89,8 @@ def test_plot_5d_uses_daily_closes():
     intraday = build_intraday_frame(_sample_intraday_raw())
     fig = plot_price_history({"daily": daily, "intraday": intraday}, "5D")
     assert fig is not None
-    assert "5D" in fig.axes[0].get_title(loc="left")
+    assert "5D" in fig.layout.title.text
+    assert len(fig.data[1].x) == 5
 
 
 def test_get_intraday_ohlcv_maps_provider_frame():
