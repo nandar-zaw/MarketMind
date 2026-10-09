@@ -56,8 +56,8 @@ SPECIALIST_WEIGHTS = {
 }
 INTERIM_RETURN_WEIGHT = 0.25
 
-# Agents that consume DataAgentResult directly (prices / news).
-_DATA_CONSUMERS = {"technical_agent", "sentiment_agent"}
+# Agents that consume DataAgentResult directly (prices / news / fundamentals).
+_DATA_CONSUMERS = {"technical_agent", "sentiment_agent", "fundamental_agent"}
 
 
 class CoordinatorAgent(BaseAgent):
@@ -77,7 +77,7 @@ class CoordinatorAgent(BaseAgent):
         self.specialists = specialists or {
             "technical_agent": TechnicalAgent(data_agent=self.data_agent),
             "sentiment_agent": SentimentAgent(data_agent=self.data_agent),
-            "fundamental_agent": FundamentalAgent(),
+            "fundamental_agent": FundamentalAgent(data_agent=self.data_agent),
         }
         # Optional test hook: inject a DataFrame instead of calling DataAgent.
         self.price_fetcher = price_fetcher

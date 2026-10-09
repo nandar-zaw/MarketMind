@@ -113,10 +113,16 @@ def test_data_failure_is_unavailable_not_crash():
     assert "network down" in result.explanation
 
 
-def test_missing_api_key_is_unavailable(monkeypatch):
+def test_missing_api_key_uses_keyword_fallback(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    result = asyncio.run(_agent().analyze("META"))
-    assert result.signal == "unavailable"
+    agent = SentimentAgent(
+        data_agent=FakeDataAgent(result=_data()),
+        llm_runner=None,
+    )
+    result = asyncio.run(agent.analyze("META"))
+    assert result.signal in {"bullish", "neutral", "bearish"}
+    assert "keyword fallback" in result.explanation.lower()
+
 
 
 def test_prefetched_data_skips_data_agent():

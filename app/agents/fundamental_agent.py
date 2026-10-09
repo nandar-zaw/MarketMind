@@ -1,139 +1,204 @@
 """
 Fundamental Analysis Agent.
 
-Analyzes company fundamentals (revenue growth, margins, valuation,
-balance sheet health, risk factors) using RAG over SEC filings
-(10-K / 10-Q) via OpenAI's FileSearchTool.
+Scores valuation / growth / quality from the FundamentalSnapshot that
+DataAgent fetches via yfinance (direct API). No SEC file storage is
+required for the S&P 500 (SPY) path.
 
-Implements the BaseAgent interface: analyze(ticker) -> AgentResult.
-The Coordinator calls this the same way it calls every other agent.
-
-Setup:
-  1. Upload the filings to a vector store at platform.openai.com
-     (Dashboard -> Storage -> Vector Stores -> "marketmind-fundamentals").
-  2. Set FUNDAMENTALS_VECTOR_STORE_ID=vs_... in your .env
+Optional legacy: if FUNDAMENTALS_VECTOR_STORE_ID is set, teammates can
+still experiment with SEC RAG later — the default classroom path is
+the DataAgent snapshot.
 """
 
-import os
-import re
+from __future__ import annotations
 
-from dotenv import load_dotenv
-
-from agents import Agent, Runner, trace, FileSearchTool
+import logging
+from typing import Optional
 
 from app.agents.base_agent import BaseAgent
-from app.models.schemas import AgentResult
+from app.agents.data_agent import DataAgent
+from app.models.schemas import AgentResult, DataAgentResult, FundamentalSnapshot
 
-load_dotenv(override=True)
+logger = logging.getLogger(__name__)
 
-_INSTRUCTIONS = (
-    "You are a fundamental equity analyst. You answer ONLY from the company "
-    "filings retrieved with the file search tool (10-K annual reports and 10-Q "
-    "quarterly reports). Never use general knowledge or guess numbers.\n\n"
-    "For the given ticker, assess:\n"
-    "1. Revenue growth (latest year / quarter vs prior periods)\n"
-    "2. Profitability: gross margin and operating margin trends\n"
-    "3. Valuation: P/E or P/S relative to the company's own history if disclosed\n"
-    "4. Balance sheet health: cash position, total debt, debt-to-equity\n"
-    "5. Key risks stated in the filing's Risk Factors section\n\n"
-    "Return your answer in EXACTLY this format:\n"
-    "SCORE: <number from -1.0 (strong sell) to +1.0 (strong buy)>\n"
-    "EVIDENCE:\n"
-    "- <bullet with a concrete number and the filing it came from>\n"
-    "- <bullet with a concrete number and the filing it came from>\n"
-    "- <bullet with a concrete number and the filing it came from>\n"
-    "VERDICT: <one sentence>\n\n"
-    "If a data point is not in the retrieved filings, write 'not disclosed in "
-    "retrieved filings' instead of inventing it."
-)
-
-# Score thresholds for the buy/hold/sell signal (tunable).
-_BUY_THRESHOLD = 0.33
-_SELL_THRESHOLD = -0.33
-
-# File-search citations sometimes leak into the model's raw text as
-# markers like "【filecite】turn1file2" (visible as stray tokens). Strip
-# them so explanations stay clean in the UI and in stored results.
-_CITATION_RE = re.compile(
-    r"【[^】]*】"  # bracketed citation block
-    r"|[\ufffd\ue000-\uf8ff]"  # replacement / private-use glyphs
-    r"|filecite"
-    r"|turn\d+file\d+"
-)
-
-
-def _sanitize(text: str) -> str:
-    cleaned = _CITATION_RE.sub("", text)
-    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
-
-
-def _build_agent() -> Agent:
-    """Build the underlying SDK agent. Fails fast with a clear message if the
-    vector store is not configured."""
-    vector_store_id = os.environ.get("FUNDAMENTALS_VECTOR_STORE_ID")
-    if not vector_store_id:
-        raise RuntimeError(
-            "FUNDAMENTALS_VECTOR_STORE_ID is not set. Upload the filings to a "
-            "vector store (platform.openai.com -> Storage -> Vector Stores) "
-            "and add FUNDAMENTALS_VECTOR_STORE_ID=vs_... to your .env file."
-        )
-    return Agent(
-        name="Fundamental Analyst",
-        instructions=_INSTRUCTIONS,
-        tools=[FileSearchTool(vector_store_ids=[vector_store_id])],
-    )
-
-
-def _parse_output(text: str) -> tuple[float, list[str], str]:
-    """Parse the agent's structured text into (score, evidence, verdict)."""
-    text = _sanitize(text)
-    score_match = re.search(r"^SCORE:\s*([-+]?\d*\.?\d+)", text, re.MULTILINE)
-    score = float(score_match.group(1)) if score_match else 0.0
-    score = max(-1.0, min(1.0, score))  # clamp to [-1, 1]
-
-    verdict_match = re.search(r"^VERDICT:\s*(.+)$", text, re.MULTILINE)
-    verdict = verdict_match.group(1).strip() if verdict_match else ""
-
-    evidence: list[str] = []
-    in_evidence = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("EVIDENCE:"):
-            in_evidence = True
-            continue
-        if stripped.startswith("VERDICT:"):
-            break
-        if in_evidence and stripped.startswith("- "):
-            evidence.append(stripped[2:].strip())
-    return score, evidence, verdict
-
-
-def _signal_for(score: float) -> str:
-    if score >= _BUY_THRESHOLD:
-        return "buy"
-    if score <= _SELL_THRESHOLD:
-        return "sell"
-    return "hold"
+_AGENT_NAME = "fundamental_agent"
+_BULLISH_THRESHOLD = 2
+_BEARISH_THRESHOLD = -2
 
 
 class FundamentalAgent(BaseAgent):
-    """Fundamental analysis via RAG over SEC filings."""
+    """Fundamental analysis from DataAgent market-API metrics."""
 
-    name = "fundamental_agent"
+    name = _AGENT_NAME
 
-    async def analyze(self, ticker: str) -> AgentResult:
-        agent = _build_agent()
-        with trace(f"marketmind.fundamental_agent:{ticker}"):
-            result = await Runner.run(agent, f"Analyze the fundamentals of {ticker}.")
+    def __init__(self, data_agent: Optional[DataAgent] = None):
+        self.data_agent = data_agent or DataAgent()
 
-        score, evidence, verdict = _parse_output(result.final_output)
-        explanation = verdict
-        if evidence:
-            explanation += "\n" + "\n".join(f"- {bullet}" for bullet in evidence)
+    async def analyze(
+        self,
+        ticker: str,
+        *,
+        data: Optional[DataAgentResult] = None,
+    ) -> AgentResult:
+        """
+        Score fundamentals for a ticker.
 
+        Prefer the shared DataAgentResult from the Coordinator. If none
+        is passed, fetch via DataAgent (never via SEC file storage).
+        """
+        if data is None:
+            try:
+                data = await self.data_agent.analyze(ticker)
+            except Exception as exc:
+                return AgentResult(
+                    agent_name=self.name,
+                    signal="unavailable",
+                    confidence=0.0,
+                    explanation=(
+                        f"Could not retrieve fundamentals for "
+                        f"{str(ticker).upper()} ({type(exc).__name__}: {exc})."
+                    ),
+                )
+
+        snapshot = data.fundamentals
+        if snapshot is None:
+            return AgentResult(
+                agent_name=self.name,
+                signal="unavailable",
+                confidence=0.0,
+                explanation=(
+                    f"No fundamental snapshot available for {data.ticker}, "
+                    "so this agent does not vote."
+                ),
+            )
+
+        signal, confidence, explanation = _score_snapshot(snapshot)
+        logger.info(
+            "FundamentalAgent %s -> signal=%s confidence=%.2f",
+            data.ticker,
+            signal,
+            confidence,
+        )
         return AgentResult(
             agent_name=self.name,
-            signal=_signal_for(score),
-            confidence=round(abs(score), 2),
+            signal=signal,
+            confidence=confidence,
             explanation=explanation,
         )
+
+
+def _score_snapshot(
+    snap: FundamentalSnapshot,
+) -> tuple[str, float, str]:
+    """
+    Turn a FundamentalSnapshot into bullish / neutral / bearish.
+
+    Each available metric casts a simple vote (+1 / 0 / -1). Enough for
+    a classroom demo; the Fundamental teammate can refine later.
+    """
+    votes: list[tuple[str, int]] = []
+
+    # Valuation: lower trailing P/E tends to look more attractive.
+    if snap.trailing_pe is not None:
+        if snap.trailing_pe < 18:
+            votes.append((f"trailing P/E {snap.trailing_pe:.1f} looks inexpensive", 1))
+        elif snap.trailing_pe > 28:
+            votes.append((f"trailing P/E {snap.trailing_pe:.1f} looks expensive", -1))
+        else:
+            votes.append((f"trailing P/E {snap.trailing_pe:.1f} is moderate", 0))
+
+    # Forward vs trailing: cheaper forward implies expected earnings growth.
+    if snap.forward_pe is not None and snap.trailing_pe is not None:
+        if snap.forward_pe < snap.trailing_pe * 0.95:
+            votes.append(
+                (
+                    f"forward P/E {snap.forward_pe:.1f} below trailing "
+                    f"{snap.trailing_pe:.1f}",
+                    1,
+                )
+            )
+        elif snap.forward_pe > snap.trailing_pe * 1.05:
+            votes.append(
+                (
+                    f"forward P/E {snap.forward_pe:.1f} above trailing "
+                    f"{snap.trailing_pe:.1f}",
+                    -1,
+                )
+            )
+
+    if snap.revenue_growth is not None:
+        if snap.revenue_growth > 0.03:
+            votes.append((f"revenue growth {snap.revenue_growth:.1%}", 1))
+        elif snap.revenue_growth < -0.03:
+            votes.append((f"revenue growth {snap.revenue_growth:.1%}", -1))
+        else:
+            votes.append((f"revenue growth {snap.revenue_growth:.1%} flat", 0))
+
+    if snap.earnings_growth is not None:
+        if snap.earnings_growth > 0.03:
+            votes.append((f"earnings growth {snap.earnings_growth:.1%}", 1))
+        elif snap.earnings_growth < -0.03:
+            votes.append((f"earnings growth {snap.earnings_growth:.1%}", -1))
+
+    if snap.profit_margins is not None:
+        if snap.profit_margins > 0.15:
+            votes.append((f"profit margin {snap.profit_margins:.1%} is strong", 1))
+        elif snap.profit_margins < 0.05:
+            votes.append((f"profit margin {snap.profit_margins:.1%} is weak", -1))
+
+    if snap.debt_to_equity is not None:
+        if snap.debt_to_equity > 200:
+            votes.append((f"debt/equity {snap.debt_to_equity:.0f} is elevated", -1))
+        elif snap.debt_to_equity < 80:
+            votes.append((f"debt/equity {snap.debt_to_equity:.0f} looks manageable", 1))
+
+    # ETF / index friendly signals (SPY often has these).
+    if snap.ytd_return is not None:
+        if snap.ytd_return > 0.05:
+            votes.append((f"YTD return {snap.ytd_return:.1%}", 1))
+        elif snap.ytd_return < -0.05:
+            votes.append((f"YTD return {snap.ytd_return:.1%}", -1))
+        else:
+            votes.append((f"YTD return {snap.ytd_return:.1%} is muted", 0))
+
+    if snap.three_year_avg_return is not None:
+        if snap.three_year_avg_return > 0.08:
+            votes.append(
+                (f"3Y avg return {snap.three_year_avg_return:.1%} is solid", 1)
+            )
+        elif snap.three_year_avg_return < 0.0:
+            votes.append(
+                (f"3Y avg return {snap.three_year_avg_return:.1%} is weak", -1)
+            )
+
+    if snap.dividend_yield is not None and snap.dividend_yield > 0:
+        votes.append((f"dividend yield {snap.dividend_yield:.2%}", 0))
+
+    if not votes:
+        return (
+            "unavailable",
+            0.0,
+            (
+                f"Fundamental snapshot for {snap.ticker} has no usable metrics "
+                f"(quote_type={snap.quote_type}), so this agent does not vote."
+            ),
+        )
+
+    score = sum(v for _, v in votes)
+    if score >= _BULLISH_THRESHOLD:
+        signal = "bullish"
+    elif score <= _BEARISH_THRESHOLD:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+
+    agreeing = sum(1 for _, v in votes if (v > 0 and score > 0) or (v < 0 and score < 0) or score == 0)
+    confidence = round(min(0.95, 0.4 + 0.15 * abs(score) + 0.05 * agreeing), 2)
+
+    bullets = "; ".join(reason for reason, _ in votes[:6])
+    quote = snap.quote_type or "unknown"
+    explanation = (
+        f"Fundamental outlook for {snap.ticker} ({quote}) is {signal} "
+        f"(score={score:+d}). {bullets}."
+    )
+    return signal, confidence, explanation

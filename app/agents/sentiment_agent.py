@@ -24,15 +24,16 @@ it ask the DataAgent. Scoring mirrors the Fundamental Agent:
     0.0): this agent does not vote instead of crashing the
     coordinator.
 
-Setup: OPENAI_API_KEY must be set (see .env.example). Headlines come
-from yfinance via NewsDataService, so no extra API key is needed.
+Setup: OPENAI_API_KEY enables LLM scoring. If the key is missing, a
+simple keyword fallback scores the same DataAgent headlines so demos
+still work without OpenAI. Headlines come from yfinance via
+NewsDataService / DataAgent.
 """
 
 import os
 import re
 from typing import Optional
 
-from agents import Agent, Runner, trace
 from dotenv import load_dotenv
 
 from app.agents.base_agent import BaseAgent
@@ -40,6 +41,14 @@ from app.agents.data_agent import DataAgent
 from app.models.schemas import AgentResult, DataAgentResult, NewsItem
 
 load_dotenv(override=True)
+
+# Optional LLM imports — only used when OPENAI_API_KEY is set.
+try:
+    from agents import Agent, Runner, trace
+except ImportError:  # pragma: no cover - package is in requirements
+    Agent = None  # type: ignore[misc, assignment]
+    Runner = None  # type: ignore[misc, assignment]
+    trace = None  # type: ignore[misc, assignment]
 
 _AGENT_NAME = "sentiment_agent"
 _MAX_HEADLINES = 8
@@ -65,6 +74,56 @@ VERDICT: <one sentence summarizing the overall sentiment and why>
 """
 
 _SCORE_RE = re.compile(r"SCORE:\s*(-?\d+(?:\.\d+)?)")
+
+_POSITIVE_WORDS = (
+    "beat",
+    "beats",
+    "surge",
+    "surges",
+    "rally",
+    "rallies",
+    "gain",
+    "gains",
+    "growth",
+    "record",
+    "upgrade",
+    "upgrades",
+    "bullish",
+    "optimistic",
+    "strong",
+    "rise",
+    "rises",
+    "soar",
+    "soars",
+    "outperform",
+    "profit",
+    "positive",
+)
+_NEGATIVE_WORDS = (
+    "miss",
+    "misses",
+    "fall",
+    "falls",
+    "drop",
+    "drops",
+    "cut",
+    "cuts",
+    "downgrade",
+    "downgrades",
+    "bearish",
+    "weak",
+    "lawsuit",
+    "probe",
+    "fraud",
+    "loss",
+    "losses",
+    "recession",
+    "slump",
+    "crash",
+    "selloff",
+    "warning",
+    "negative",
+)
 
 
 def _sanitize(text: str) -> str:
@@ -140,6 +199,59 @@ def _parse_output(ticker: str, text: str, headline_count: int) -> AgentResult:
     )
 
 
+def _keyword_score_headlines(
+    ticker: str, headlines: list[NewsItem]
+) -> AgentResult:
+    """
+    Lightweight sentiment when OPENAI_API_KEY is not set.
+
+    Counts positive vs negative keywords in titles/summaries so the
+    classroom demo still produces a live vote from DataAgent news.
+    """
+    pos = 0
+    neg = 0
+    cited: list[str] = []
+    for i, item in enumerate(headlines, 1):
+        text = f"{item.title} {item.summary}".lower()
+        local_pos = sum(1 for w in _POSITIVE_WORDS if w in text)
+        local_neg = sum(1 for w in _NEGATIVE_WORDS if w in text)
+        pos += local_pos
+        neg += local_neg
+        if local_pos > local_neg:
+            cited.append(f"- Positive tone in [{i}] {item.title}")
+        elif local_neg > local_pos:
+            cited.append(f"- Negative tone in [{i}] {item.title}")
+
+    total = pos + neg
+    if total == 0:
+        score = 0.0
+    else:
+        score = (pos - neg) / total
+    score = max(-1.0, min(1.0, score))
+
+    if score >= _BULLISH_THRESHOLD:
+        signal = "bullish"
+    elif score <= _BEARISH_THRESHOLD:
+        signal = "bearish"
+    else:
+        signal = "neutral"
+
+    explanation = (
+        f"Sentiment from {len(headlines)} recent headlines for {ticker} "
+        f"(keyword fallback, no OPENAI_API_KEY): {signal}. "
+        f"Positive hits={pos}, negative hits={neg}."
+    )
+    if cited:
+        explanation += "\n" + "\n".join(cited[:5])
+
+    return AgentResult(
+        agent_name=_AGENT_NAME,
+        signal=signal,
+        confidence=round(abs(score), 2),
+        explanation=explanation,
+    )
+
+
 class SentimentAgent(BaseAgent):
     """News-sentiment specialist in the MarketMind pipeline."""
 
@@ -155,11 +267,13 @@ class SentimentAgent(BaseAgent):
         # prices/company/news; this agent never fetches raw data.
         self.data_agent = data_agent or DataAgent()
         # Test seam: async callable (prompt) -> raw model text.
-        # When None, the OpenAI Agents SDK runner is used.
+        # When None, the OpenAI Agents SDK runner is used (if keyed).
         self._llm_runner = llm_runner
-        self._agent: Agent | None = None
+        self._agent = None
 
-    def _get_agent(self) -> Agent:
+    def _get_agent(self):
+        if Agent is None:
+            raise RuntimeError("openai-agents package is not available.")
         if self._agent is None:
             self._agent = Agent(
                 name="MarketMind Sentiment Analysis",
@@ -179,11 +293,6 @@ class SentimentAgent(BaseAgent):
         If ``data`` is not provided, obtain it via the DataAgent
         (SentimentAgent never calls news providers directly).
         """
-        if not os.getenv("OPENAI_API_KEY"):
-            return _unavailable(
-                "OPENAI_API_KEY is not configured, so the sentiment "
-                "model cannot run and this agent does not vote."
-            )
         if data is None:
             try:
                 data = await self.data_agent.analyze(ticker)
@@ -199,6 +308,11 @@ class SentimentAgent(BaseAgent):
                 f"{data.ticker}; not enough coverage to score sentiment, "
                 "so this agent does not vote."
             )
+
+        use_llm = bool(os.getenv("OPENAI_API_KEY")) or self._llm_runner is not None
+        if not use_llm:
+            return _keyword_score_headlines(data.ticker, headlines)
+
         prompt = _build_prompt(data.ticker, headlines)
         try:
             if self._llm_runner is not None:
@@ -208,8 +322,11 @@ class SentimentAgent(BaseAgent):
                     result = await Runner.run(self._get_agent(), prompt)
                 raw = result.final_output or ""
         except Exception as exc:
-            return _unavailable(
-                f"Sentiment model call failed ({type(exc).__name__}: "
-                f"{exc}), so this agent does not vote."
+            # Fall back to keywords rather than going fully unavailable.
+            fallback = _keyword_score_headlines(data.ticker, headlines)
+            fallback.explanation = (
+                f"LLM sentiment failed ({type(exc).__name__}: {exc}); "
+                f"used keyword fallback. {fallback.explanation}"
             )
+            return fallback
         return _parse_output(data.ticker, _sanitize(raw), len(headlines))

@@ -98,19 +98,18 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ## 4. Fundamental Analysis Agent
 
-**Input (preferred for S&P 500):**
+**Status:** Implemented for the S&P 500 path (DataAgent API snapshot)
+
+**Input:**
 - `DataAgentResult.fundamentals` from DataAgent (yfinance direct API)
-- Examples: trailing/forward P/E, dividend yield, growth, margins, debt, ETF assets / YTD return
+- Examples: trailing/forward P/E, dividend yield, growth, margins, debt, ETF YTD / 3Y returns
 
-**Legacy / optional:**
-- SEC filing RAG via OpenAI file storage (single-company demos only; not required for `SPY`)
-
-**Analysis (teammate ownership):**
-- Score valuation / quality / growth from the snapshot
-- Emit `bullish` / `neutral` / `bearish` with confidence and explanation
+**Analysis:**
+- Simple classroom scoring over available metrics (valuation, growth, margins, debt, ETF returns)
+- Does **not** require `FUNDAMENTALS_VECTOR_STORE_ID` or SEC file storage
 
 **Output:**
-- Fundamental signal
+- Fundamental signal: `bullish` | `neutral` | `bearish` (or `unavailable` if no metrics)
 - Confidence score
 - Short explanation
 
