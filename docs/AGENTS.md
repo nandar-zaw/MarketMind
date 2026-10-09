@@ -10,7 +10,7 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ## 1. Data Collector Agent
 
-**Status:** Implemented (market data + company info + recent news)
+**Status:** Implemented (market data + company info + recent news + SEC filing evidence)
 
 **Input:**
 - Stock ticker symbol (for example `AAPL`)
@@ -22,6 +22,7 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 - Downloads historical OHLCV price data via `MarketDataService` (yfinance)
 - Collects basic company information (name, sector, industry, exchange, currency, market cap)
 - Fetches recent news headlines via `NewsDataService` (yfinance); a news outage degrades to an empty list instead of failing the data pull
+- Retrieves SEC filing evidence via `FilingsDataService` (OpenAI vector store of 10-K / 10-Q filings, `FUNDAMENTALS_VECTOR_STORE_ID`); a retrieval outage degrades to an empty list the same way
 - Normalizes tickers to uppercase and cleans unusable rows
 - Returns structured Pydantic output (`DataAgentResult`)
 
@@ -30,6 +31,7 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 - `company_info`
 - `price_history` (oldest → newest)
 - `news` (recent headlines: title, publisher, date, summary)
+- `filings` (SEC filing excerpts: text, source file, relevance score)
 - `start_date` / `end_date`
 - `records_count`
 
@@ -89,20 +91,22 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ## 4. Fundamental Analysis Agent
 
-**Input:**
-- Company financial information
+**Status:** Implemented
 
-**Future analysis:**
-- Revenue growth
-- Earnings
-- P/E ratio
-- Debt levels
-- Overall financial health
+**Input:**
+- SEC filing excerpts (10-K / 10-Q) from DataAgent (`DataAgentResult.filings`, retrieved by `FilingsDataService` from the project vector store)
+- Does **not** query the vector store or any other data provider itself
+
+**Analysis:**
+- Revenue growth, profitability (gross / operating margins), valuation when disclosed, balance sheet health (cash, debt), and stated risk factors
+- The model judges only the supplied excerpts about the requested ticker and cites them ([1], [2], ...); figures missing from the excerpts are reported as "not disclosed in retrieved filings"
+- Model output is parsed deterministically (`SCORE` / `EVIDENCE` / `VERDICT`); score ≥ +0.33 → `buy`, ≤ −0.33 → `sell`, otherwise `hold`
+- Too little filing evidence, a failed data pull, or missing configuration returns `unavailable` (this agent does not vote) instead of raising an error
 
 **Output:**
-- Fundamental signal
-- Confidence score
-- Short explanation
+- Fundamental signal: `buy` | `hold` | `sell`
+- Confidence score (0.0 – 1.0, the absolute parsed score)
+- Short explanation built from the cited filing evidence
 
 ---
 
