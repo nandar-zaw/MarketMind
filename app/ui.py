@@ -71,12 +71,19 @@ def _guardrail_lines(final: FinalRecommendation) -> str:
     """Render the guardrail audit trail stored on the final result."""
     if not final.guardrails:
         return ""
-    lines = ["", "**Guardrail checks**"]
+    lines = [
+        "",
+        "**Guardrail audit trail**",
+        "",
+        "| Kind | Check | Result | Detail |",
+        "| --- | --- | --- | --- |",
+    ]
     for event in final.guardrails[:8]:
-        mark = "✅" if event.passed else "⛔"
-        lines.append(f"- {mark} {event.kind} {event.name}: {event.detail}")
+        detail = event.detail.replace("|", "/")
+        result = "pass" if event.passed else "FAIL"
+        lines.append(f"| {event.kind} | {event.name} | {result} | {detail} |")
     if len(final.guardrails) > 8:
-        lines.append(f"- … and {len(final.guardrails) - 8} more")
+        lines += ["", f"_and {len(final.guardrails) - 8} more checks_"]
     return "\n".join(lines)
 
 
@@ -91,7 +98,7 @@ def _fmt_market_cap(value: float) -> str:
 
 
 def _company_markdown(data: DataAgentResult | None) -> str:
-    """One-line company header (name, sector, industry, market cap)."""
+    """Company header: name/meta line plus a small price-stats table."""
     if data is None:
         return ""
     info = data.company_info
@@ -101,6 +108,19 @@ def _company_markdown(data: DataAgentResult | None) -> str:
         meta.append(f"Market cap {_fmt_market_cap(info.market_cap)}")
     if meta:
         lines.append(" · ".join(meta))
+    closes = [p.close for p in data.price_history]
+    if len(closes) >= 2:
+        heads = ["Last close", "1-day change"]
+        cells = [f"${closes[-1]:,.2f}", f"{closes[-1] / closes[-2] - 1:+.2%}"]
+        if len(closes) >= 6:
+            heads.append("5-day change")
+            cells.append(f"{closes[-1] / closes[-6] - 1:+.2%}")
+        lines += [
+            "",
+            "| " + " | ".join(heads) + " |",
+            "| " + " | ".join("---" for _ in heads) + " |",
+            "| " + " | ".join(cells) + " |",
+        ]
     return "\n".join(lines)
 
 
@@ -116,12 +136,19 @@ def _chart_frame(data: DataAgentResult | None):
     )
     frame["SMA20"] = frame["Close"].rolling(window=20).mean()
     frame["SMA50"] = frame["Close"].rolling(window=50).mean()
-    return frame.melt(
+    daily = frame.dropna()
+    daily = daily.assign(date=pd.to_datetime(daily["date"]))
+    # One point per week (the week's last trading day, real date kept).
+    # A year of daily points puts ~250 labels under the axis and they
+    # render as an unreadable strip; the indicators above are still
+    # computed on the daily series, so the trend is unchanged.
+    weekly = daily.groupby(pd.Grouper(key="date", freq="W-FRI")).tail(1)
+    return weekly.melt(
         id_vars="date",
         value_vars=["Close", "SMA20", "SMA50"],
         var_name="Series",
         value_name="Price",
-    ).dropna()
+    )
 
 
 def _filter_chart(frame, window: str):
@@ -151,7 +178,7 @@ async def _visual_data(ticker: str) -> DataAgentResult | None:
 async def analyze(
     ticker: str,
     horizon_days: int,
-    window: str = "1Y",
+    window: str = "6M",
     progress=gr.Progress(),
 ):
     """Run the Coordinator once and fill every panel from its result."""
@@ -183,15 +210,70 @@ async def analyze(
     )
 
 
-def _agent_panel(title: str, open_by_default: bool = False):
-    with gr.Accordion(title, open=open_by_default):
-        signal = gr.Textbox(label="Signal", interactive=False)
+def _agent_panel(
+    title: str,
+    open_by_default: bool = False,
+    elem_id: str | None = None,
+    elem_classes: list[str] | None = None,
+):
+    with gr.Accordion(title, open=open_by_default, elem_id=elem_id, elem_classes=elem_classes):
+        signal = gr.Textbox(
+            label="Signal",
+            interactive=False,
+            elem_id=f"{elem_id}-signal" if elem_id else None,
+        )
         confidence = gr.Textbox(label="Confidence (0–1)", interactive=False)
         explanation = gr.Markdown()
     return signal, confidence, explanation
 
 
-with gr.Blocks(title="MarketMind") as demo:
+_THEME = gr.themes.Base(
+    primary_hue="emerald",
+    neutral_hue="slate",
+)
+
+# Dark slate look: deep navy panels, green accent, the coordinator
+# decision panel reads as the hero of the page. Gradio renders its
+# light palette by default, so the semantic variables are pointed at
+# the dark end of the same slate ramp the theme already ships.
+_CSS = """
+:root {
+    --background-fill-primary: var(--neutral-950);
+    --background-fill-secondary: var(--neutral-900);
+    --body-background-fill: var(--background-fill-primary);
+    --body-text-color: var(--neutral-100);
+    --body-text-color-subdued: var(--neutral-400);
+    --block-background-fill: var(--neutral-900);
+    --block-border-color: var(--neutral-700);
+    --border-color-primary: var(--neutral-700);
+    --block-label-text-color: var(--neutral-300);
+    --block-label-background-fill: var(--background-fill-secondary);
+    --block-label-border-color: var(--border-color-primary);
+    --block-title-text-color: var(--neutral-100);
+    --panel-background-fill: var(--background-fill-secondary);
+    --panel-border-color: var(--border-color-primary);
+    --input-background-fill: var(--neutral-900);
+    --input-border-color: var(--neutral-600);
+    --input-placeholder-color: var(--neutral-500);
+    --table-border-color: var(--neutral-700);
+    --table-even-background-fill: var(--neutral-950);
+    --table-odd-background-fill: var(--neutral-900);
+    --table-text-color: var(--body-text-color);
+    --code-background-fill: var(--neutral-800);
+    --checkbox-label-background-fill: var(--neutral-800);
+    --checkbox-label-background-fill-selected: var(--primary-600);
+    --checkbox-label-text-color-selected: white;
+    --checkbox-background-color-selected: var(--color-accent);
+    --checkbox-border-color-selected: var(--color-accent);
+}
+body { background: var(--neutral-950) !important; }
+.gradio-container { max-width: 1180px !important; }
+#hero { border: 1px solid #1e5c3a !important; background: linear-gradient(180deg, #0d2317 0%, var(--neutral-900) 92%) !important; }
+#hero-signal textarea, #hero-signal input { font-size: 34px !important; font-weight: 800 !important; letter-spacing: .4px; }
+.agent-card { border: 1px solid var(--neutral-700) !important; border-radius: 12px !important; }
+"""
+
+with gr.Blocks(title="MarketMind", theme=_THEME, css=_CSS) as demo:
     gr.Markdown(
         "# MarketMind\n"
         "Multi-agent system for S&P 500 trend prediction and investment "
@@ -217,28 +299,34 @@ with gr.Blocks(title="MarketMind") as demo:
         )
         analyze_button = gr.Button("Analyze", variant="primary")
 
-    company_output = gr.Markdown()
-
     final_outputs = _agent_panel(
-        "Final Recommendation (Coordinator)", open_by_default=True
+        "Final Recommendation (Coordinator)", open_by_default=True, elem_id="hero"
     )
+    company_output = gr.Markdown()
     chart_output = gr.LinePlot(
-        label="Price history (1 year) with SMA20 and SMA50",
+        label="Price history with SMA20 and SMA50 (weekly points)",
         x="date",
         y="Price",
         color="Series",
         height=320,
+        x_label_angle=-45,
     )
     chart_range = gr.Radio(
         choices=["3M", "6M", "1Y"],
-        value="1Y",
+        value="6M",
         label="Chart window (re-filters instantly, no new analysis)",
     )
     chart_state = gr.State(value=None)
-    fundamental_outputs = _agent_panel("Fundamental Analysis")
-    technical_outputs = _agent_panel("Technical Analysis")
-    sentiment_outputs = _agent_panel("Sentiment Analysis")
-    risk_outputs = _agent_panel("Risk Manager")
+    with gr.Row():
+        with gr.Column():
+            fundamental_outputs = _agent_panel("Fundamental Analysis", open_by_default=True, elem_classes=["agent-card"])
+        with gr.Column():
+            technical_outputs = _agent_panel("Technical Analysis", open_by_default=True, elem_classes=["agent-card"])
+    with gr.Row():
+        with gr.Column():
+            sentiment_outputs = _agent_panel("Sentiment Analysis", open_by_default=True, elem_classes=["agent-card"])
+        with gr.Column():
+            risk_outputs = _agent_panel("Risk Manager", open_by_default=True, elem_classes=["agent-card"])
 
     all_outputs = [
         *final_outputs,
@@ -269,7 +357,7 @@ with gr.Blocks(title="MarketMind") as demo:
         outputs=chart_output,
     )
     gr.Examples(
-        examples=[["AAPL", 5, "1Y"], ["TSLA", 5, "6M"], ["NVDA", 10, "3M"]],
+        examples=[["AAPL", 5, "6M"], ["TSLA", 5, "6M"], ["NVDA", 10, "3M"]],
         inputs=all_inputs,
         outputs=all_outputs,
         fn=analyze,
