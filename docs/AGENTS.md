@@ -20,7 +20,8 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 **What it does:**
 - Downloads historical OHLCV price data via `MarketDataService` (yfinance)
-- Collects basic company information (name, sector, industry, exchange, currency, market cap)
+- Collects basic company / fund information (name, sector, industry, exchange, currency, market cap)
+- Collects **fundamental metrics** via a direct yfinance API call (`FundamentalSnapshot`) — not SEC file storage
 - Fetches recent news headlines via `NewsDataService` (yfinance); a news outage degrades to an empty list instead of failing the data pull
 - Normalizes tickers to uppercase and cleans unusable rows
 - Returns structured Pydantic output (`DataAgentResult`)
@@ -28,19 +29,21 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 **Output:**
 - `ticker`
 - `company_info`
+- `fundamentals` (P/E, growth, margins, debt, ETF extras, …)
 - `price_history` (oldest → newest)
 - `news` (recent headlines: title, publisher, date, summary)
 - `start_date` / `end_date`
 - `records_count`
 
 **What it does not do:**
-- Technical indicators, sentiment, fundamentals, risk scoring, or BUY/HOLD/SELL decisions
+- Technical indicators, sentiment scoring, risk scoring, or BUY/HOLD/SELL decisions
+  (it **supplies** fundamental numbers; it does not score them)
 
 **Who consumes this data:**
 - **Technical Agent** → `price_history` (OHLCV)
 - **Sentiment Agent** → `news` headlines
 - **Risk Agent / Coordinator** → same OHLCV (Coordinator loads DataAgent once, then shares it)
-- **Fundamental Agent** → does **not** use DataAgent; it reads SEC filings from its own vector store (company-level RAG). For the S&P 500 (`SPY`) focus, that agent is often `unavailable`.
+- **Fundamental Agent** → should use `fundamentals` from DataAgent (direct API). SEC file-storage RAG is optional/legacy for single-stock demos, not required for S&P 500 (`SPY`).
 
 ---
 
@@ -95,15 +98,16 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ## 4. Fundamental Analysis Agent
 
-**Input:**
-- Company financial information
+**Input (preferred for S&P 500):**
+- `DataAgentResult.fundamentals` from DataAgent (yfinance direct API)
+- Examples: trailing/forward P/E, dividend yield, growth, margins, debt, ETF assets / YTD return
 
-**Future analysis:**
-- Revenue growth
-- Earnings
-- P/E ratio
-- Debt levels
-- Overall financial health
+**Legacy / optional:**
+- SEC filing RAG via OpenAI file storage (single-company demos only; not required for `SPY`)
+
+**Analysis (teammate ownership):**
+- Score valuation / quality / growth from the snapshot
+- Emit `bullish` / `neutral` / `bearish` with confidence and explanation
 
 **Output:**
 - Fundamental signal

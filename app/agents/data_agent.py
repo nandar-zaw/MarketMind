@@ -1,9 +1,12 @@
 """
 Data Collector Agent.
 
-Retrieves historical OHLCV prices, basic company information, and
-recent news headlines for other agents. Does not make investment
-decisions.
+Retrieves historical OHLCV prices, basic company / fund information,
+fundamental metrics (direct market API), and recent news headlines for
+other agents. Does not make investment decisions.
+
+Fundamental metrics come from yfinance — not from SEC file storage.
+The Fundamental Agent teammate can later score ``DataAgentResult.fundamentals``.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import logging
 from typing import Optional
 
 from app.agents.base_agent import BaseAgent
-from app.models.schemas import DataAgentResult
+from app.models.schemas import CompanyInfo, DataAgentResult, FundamentalSnapshot
 from app.services.market_data import MarketDataService
 from app.services.news_data import NewsDataService
 from app.utils.exceptions import MarketDataError
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class DataAgent(BaseAgent):
     """
-    Download stock price data and basic company information.
+    Download market data and package it for specialist agents.
 
     The analyze() method stays async to match BaseAgent, but the
     underlying MarketDataService / yfinance calls are synchronous.
@@ -61,8 +64,8 @@ class DataAgent(BaseAgent):
             as_of_date: Optional cutoff date; no prices after this date are returned.
 
         Returns:
-            DataAgentResult with company info, chronological OHLCV
-            history, and recent news headlines.
+            DataAgentResult with company info, fundamentals, chronological
+            OHLCV history, and recent news headlines.
         """
         if ticker is None or not str(ticker).strip():
             raise MarketDataError("Ticker must not be empty.")
@@ -84,11 +87,24 @@ class DataAgent(BaseAgent):
             period=period,
             as_of_date=as_of_date,
         )
-        company_info = self.market_data.get_company_info(symbol)
+
+        # One Yahoo .info call for both metadata and fundamentals.
+        try:
+            company_info, fundamentals = self.market_data.get_company_and_fundamentals(
+                symbol
+            )
+        except Exception as exc:
+            logger.warning(
+                "DataAgent: company/fundamentals fetch failed for %s (%s); "
+                "continuing with empty metadata.",
+                symbol,
+                exc,
+            )
+            company_info = self._empty_company(symbol)
+            fundamentals = FundamentalSnapshot(ticker=symbol)
 
         # News is supporting data (the Sentiment Agent consumes it).
-        # A news outage must not fail the whole data pull, so errors
-        # degrade to an empty list instead of raising.
+        # A news outage must not fail the whole data pull.
         try:
             news = self.news_data.get_recent_news(symbol)
         except Exception as exc:
@@ -104,14 +120,21 @@ class DataAgent(BaseAgent):
             company_info=company_info,
             price_history=price_history,
             news=news,
+            fundamentals=fundamentals,
             start_date=price_history[0].date if price_history else None,
             end_date=price_history[-1].date if price_history else None,
             records_count=len(price_history),
         )
 
         logger.info(
-            "DataAgent completed for %s with %s records",
+            "DataAgent completed for %s with %s price records "
+            "(fundamentals quote_type=%s)",
             symbol,
             result.records_count,
+            getattr(fundamentals, "quote_type", None),
         )
         return result
+
+    @staticmethod
+    def _empty_company(symbol: str) -> CompanyInfo:
+        return CompanyInfo(ticker=symbol)

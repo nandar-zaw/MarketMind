@@ -64,10 +64,12 @@ The Coordinator loads DataAgent **once** per request, then shares the result:
 
 - historical OHLCV prices → Technical Agent + Risk Agent
 - recent news headlines → Sentiment Agent
-- basic company / fund metadata → available on `DataAgentResult.company_info`
+- basic company / fund metadata → `DataAgentResult.company_info`
+- fundamental metrics (yfinance API) → `DataAgentResult.fundamentals` for the Fundamental Agent
 
-**Exception:** the Fundamental Agent uses its own SEC-filing vector store (RAG),
-not DataAgent. That fits single-company analysis better than the S&P 500 (`SPY`) focus.
+DataAgent does **not** use SEC file storage. File-storage RAG on the Fundamental
+Agent is optional/legacy for single-stock demos; the S&P 500 path should read
+fundamentals from DataAgent.
 
 ## Request Flow (Future)
 

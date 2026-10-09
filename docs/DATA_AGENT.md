@@ -70,9 +70,23 @@ One daily OHLCV observation.
 
 ### CompanyInfo
 
-Basic company metadata. Missing fields are `None` instead of crashing.
+Basic company / fund metadata. Missing fields are `None` instead of crashing.
 
 - `ticker`, `company_name`, `sector`, `industry`, `exchange`, `currency`, `market_cap`
+
+### FundamentalSnapshot
+
+Fundamental metrics from a **direct yfinance API call** (not SEC file storage).
+
+Typical fields:
+
+- Valuation: `trailing_pe`, `forward_pe`, `price_to_book`, `price_to_sales`, `dividend_yield`
+- Quality / growth: `profit_margins`, `operating_margins`, `revenue_growth`, `earnings_growth`, `return_on_equity`
+- Balance sheet: `debt_to_equity`, `total_cash`, `total_debt`
+- Market: `beta`, `fifty_two_week_high`, `fifty_two_week_low`
+- ETF-friendly: `quote_type`, `total_assets`, `ytd_return`, `three_year_avg_return`
+
+For `SPY`, company income-statement fields are often `None`; ETF fields are filled when Yahoo provides them.
 
 ### DataAgentResult
 
@@ -80,7 +94,9 @@ The DataAgent output.
 
 - `ticker`
 - `company_info`
+- `fundamentals` (`FundamentalSnapshot` from the market API)
 - `price_history` (oldest to newest)
+- `news`
 - `start_date`, `end_date`
 - `records_count`
 
@@ -93,15 +109,21 @@ import asyncio
 
 from app.agents.data_agent import DataAgent
 
-result = asyncio.run(DataAgent().analyze("aapl"))
+result = asyncio.run(DataAgent().analyze("SPY"))
 
-print(result.ticker)              # AAPL
+print(result.ticker)              # SPY
 print(result.company_info.company_name)
-print(result.company_info.sector)
+print(result.fundamentals.trailing_pe)
+print(result.fundamentals.quote_type)  # often ETF
 print(result.records_count)       # number of OHLCV rows
 print(result.price_history[0])    # first (oldest) bar
 print(result.price_history[-1])   # last (newest) bar
+print(len(result.news))           # recent headlines for Sentiment
 ```
+
+> Fundamental Agent teammates should read `result.fundamentals` instead of
+> OpenAI file-storage / SEC RAG for the S&P 500 path.
+
 
 ### Arguments
 

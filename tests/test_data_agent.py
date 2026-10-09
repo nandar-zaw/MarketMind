@@ -12,7 +12,12 @@ import pandas as pd
 import pytest
 
 from app.agents.data_agent import DataAgent
-from app.models.schemas import CompanyInfo, DataAgentResult, MarketPrice
+from app.models.schemas import (
+    CompanyInfo,
+    DataAgentResult,
+    FundamentalSnapshot,
+    MarketPrice,
+)
 from app.services.market_data import MarketDataService
 from app.utils.exceptions import MarketDataError
 
@@ -45,6 +50,40 @@ def _sample_company_info() -> dict:
         "marketCap": 3_000_000_000_000,
         "quoteType": "EQUITY",
         "symbol": "AAPL",
+        "trailingPE": 28.5,
+        "forwardPE": 26.0,
+        "priceToBook": 45.0,
+        "priceToSalesTrailing12Months": 7.5,
+        "dividendYield": 0.005,
+        "profitMargins": 0.25,
+        "operatingMargins": 0.30,
+        "revenueGrowth": 0.08,
+        "earningsGrowth": 0.10,
+        "returnOnEquity": 1.5,
+        "debtToEquity": 150.0,
+        "totalCash": 50_000_000_000,
+        "totalDebt": 100_000_000_000,
+        "beta": 1.2,
+        "fiftyTwoWeekHigh": 220.0,
+        "fiftyTwoWeekLow": 160.0,
+    }
+
+
+def _sample_spy_info() -> dict:
+    return {
+        "longName": "SPDR S&P 500 ETF Trust",
+        "quoteType": "ETF",
+        "exchange": "PCX",
+        "currency": "USD",
+        "trailingPE": 24.0,
+        "forwardPE": 22.0,
+        "yield": 0.012,
+        "totalAssets": 500_000_000_000,
+        "ytdReturn": 0.15,
+        "threeYearAverageReturn": 0.12,
+        "fiftyTwoWeekHigh": 600.0,
+        "fiftyTwoWeekLow": 480.0,
+        "beta": 1.0,
     }
 
 
@@ -111,6 +150,42 @@ class TestMarketDataService:
         assert info.currency == "USD"
         assert info.market_cap == 3_000_000_000_000
 
+    def test_fundamentals_are_mapped_from_yahoo_info(self):
+        service = MarketDataService()
+        mock_ticker = MagicMock()
+        mock_ticker.info = _sample_company_info()
+
+        with patch("app.services.market_data.yf.Ticker", return_value=mock_ticker):
+            fundamentals = service.get_fundamentals("aapl")
+
+        assert isinstance(fundamentals, FundamentalSnapshot)
+        assert fundamentals.ticker == "AAPL"
+        assert fundamentals.quote_type == "EQUITY"
+        assert fundamentals.trailing_pe == 28.5
+        assert fundamentals.forward_pe == 26.0
+        assert fundamentals.revenue_growth == 0.08
+        assert fundamentals.debt_to_equity == 150.0
+        assert fundamentals.fifty_two_week_high == 220.0
+
+    def test_fundamentals_work_for_spy_etf_fields(self):
+        service = MarketDataService()
+        mock_ticker = MagicMock()
+        mock_ticker.info = _sample_spy_info()
+
+        with patch("app.services.market_data.yf.Ticker", return_value=mock_ticker):
+            company, fundamentals = service.get_company_and_fundamentals("spy")
+
+        assert company.ticker == "SPY"
+        assert company.company_name == "SPDR S&P 500 ETF Trust"
+        assert fundamentals.quote_type == "ETF"
+        assert fundamentals.trailing_pe == 24.0
+        assert fundamentals.dividend_yield == 0.012
+        assert fundamentals.total_assets == 500_000_000_000
+        assert fundamentals.ytd_return == 0.15
+        # Company income-statement fields are absent for an ETF.
+        assert fundamentals.revenue_growth is None
+        assert fundamentals.debt_to_equity is None
+
     def test_empty_provider_response_is_handled(self):
         service = MarketDataService()
         mock_ticker = MagicMock()
@@ -170,9 +245,16 @@ class TestDataAgent:
             currency="USD",
         )
 
+        fundamentals = FundamentalSnapshot(
+            ticker="AAPL",
+            quote_type="EQUITY",
+            trailing_pe=28.5,
+            revenue_growth=0.08,
+        )
+
         mock_service = MagicMock(spec=MarketDataService)
         mock_service.get_ohlcv.return_value = prices
-        mock_service.get_company_info.return_value = company
+        mock_service.get_company_and_fundamentals.return_value = (company, fundamentals)
 
         agent = DataAgent(market_data_service=mock_service)
         result = asyncio.run(agent.analyze("aapl"))
@@ -180,12 +262,14 @@ class TestDataAgent:
         assert isinstance(result, DataAgentResult)
         assert result.ticker == "AAPL"
         assert result.company_info.company_name == "Apple Inc."
+        assert result.fundamentals is not None
+        assert result.fundamentals.trailing_pe == 28.5
         assert result.records_count == 2
         assert result.start_date == date(2025, 1, 10)
         assert result.end_date == date(2025, 1, 15)
         assert len(result.price_history) == 2
         mock_service.get_ohlcv.assert_called_once()
-        mock_service.get_company_info.assert_called_once_with("AAPL")
+        mock_service.get_company_and_fundamentals.assert_called_once_with("AAPL")
 
     def test_data_agent_rejects_empty_ticker(self):
         agent = DataAgent(market_data_service=MagicMock(spec=MarketDataService))
@@ -204,7 +288,10 @@ class TestDataAgent:
                 volume=100,
             )
         ]
-        mock_service.get_company_info.return_value = CompanyInfo(ticker="MSFT")
+        mock_service.get_company_and_fundamentals.return_value = (
+            CompanyInfo(ticker="MSFT"),
+            FundamentalSnapshot(ticker="MSFT"),
+        )
 
         agent = DataAgent(market_data_service=mock_service)
         result = asyncio.run(agent.analyze("msft"))
@@ -212,3 +299,5 @@ class TestDataAgent:
         assert result.ticker == "MSFT"
         called_ticker = mock_service.get_ohlcv.call_args[0][0]
         assert called_ticker == "MSFT"
+        assert result.fundamentals is not None
+        assert result.fundamentals.ticker == "MSFT"

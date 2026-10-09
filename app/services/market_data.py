@@ -2,7 +2,8 @@
 Market data service.
 
 Downloads recent OHLCV prices for the Coordinator / Risk Manager, and
-provides structured OHLCV history + company info for the Data Collector Agent.
+provides structured OHLCV history, company info, and fundamental metrics
+for the Data Collector Agent (direct yfinance API — no file storage).
 
 All external market-data access is isolated here so the provider
 can be replaced later without changing agents.
@@ -11,13 +12,14 @@ can be replaced later without changing agents.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 import yfinance as yf
 
-from app.models.schemas import CompanyInfo, MarketPrice
+from app.models.schemas import CompanyInfo, FundamentalSnapshot, MarketPrice
 from app.utils.exceptions import MarketDataError
 from app.utils.helpers import normalize_ticker
 
@@ -42,6 +44,19 @@ def _validate_ticker(ticker: str) -> str:
     if ticker is None or not str(ticker).strip():
         raise MarketDataError("Ticker must not be empty.")
     return normalize_ticker(ticker)
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    """Convert a provider value to float, or None if missing/invalid."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
 
 
 class MarketDataService:
@@ -178,31 +193,58 @@ class MarketDataService:
         )
         return prices
 
+    def _fetch_yahoo_info(self, symbol: str) -> dict:
+        """Fetch the raw yfinance ``.info`` dict for one symbol."""
+        try:
+            info = yf.Ticker(symbol).info or {}
+        except Exception as exc:
+            logger.error("Provider failure for %s Yahoo info: %s", symbol, exc)
+            raise MarketDataError(
+                f"Failed to fetch market info for {symbol}."
+            ) from exc
+        if not isinstance(info, dict):
+            return {}
+        return info
+
     def get_company_info(self, ticker: str) -> CompanyInfo:
         """
-        Return basic company metadata for a ticker.
+        Return basic company / fund metadata for a ticker.
 
         Missing fields are returned as None rather than raising errors.
         """
         symbol = _validate_ticker(ticker)
         logger.info("Fetching company info for %s", symbol)
+        info = self._fetch_yahoo_info(symbol)
+        return self._map_company_info(symbol, info)
 
-        try:
-            info = yf.Ticker(symbol).info or {}
-        except Exception as exc:
-            logger.error("Provider failure for %s company info: %s", symbol, exc)
-            raise MarketDataError(
-                f"Failed to fetch company info for {symbol}."
-            ) from exc
+    def get_fundamentals(self, ticker: str) -> FundamentalSnapshot:
+        """
+        Return fundamental metrics from the direct market-data API.
 
+        This is the DataAgent path for Fundamental Agent inputs
+        (valuation, growth, balance-sheet style fields). It does **not**
+        use SEC file storage or a vector store.
+
+        Missing fields stay None (expected for ETFs such as SPY).
+        """
+        symbol = _validate_ticker(ticker)
+        logger.info("Fetching fundamentals for %s", symbol)
+        info = self._fetch_yahoo_info(symbol)
+        return self._map_fundamentals(symbol, info)
+
+    def get_company_and_fundamentals(
+        self, ticker: str
+    ) -> tuple[CompanyInfo, FundamentalSnapshot]:
+        """
+        Fetch company metadata and fundamentals with one Yahoo ``.info`` call.
+        """
+        symbol = _validate_ticker(ticker)
+        logger.info("Fetching company info + fundamentals for %s", symbol)
+        info = self._fetch_yahoo_info(symbol)
+        return self._map_company_info(symbol, info), self._map_fundamentals(symbol, info)
+
+    def _map_company_info(self, symbol: str, info: dict) -> CompanyInfo:
         company_name = info.get("longName") or info.get("shortName")
-        market_cap = info.get("marketCap")
-        if market_cap is not None:
-            try:
-                market_cap = float(market_cap)
-            except (TypeError, ValueError):
-                market_cap = None
-
         return CompanyInfo(
             ticker=symbol,
             company_name=company_name,
@@ -210,7 +252,37 @@ class MarketDataService:
             industry=info.get("industry"),
             exchange=info.get("exchange"),
             currency=info.get("currency"),
-            market_cap=market_cap,
+            market_cap=_optional_float(info.get("marketCap")),
+        )
+
+    def _map_fundamentals(self, symbol: str, info: dict) -> FundamentalSnapshot:
+        # dividendYield / yield: yfinance may expose either key for ETFs.
+        dividend_yield = _optional_float(info.get("dividendYield"))
+        if dividend_yield is None:
+            dividend_yield = _optional_float(info.get("yield"))
+
+        return FundamentalSnapshot(
+            ticker=symbol,
+            quote_type=info.get("quoteType"),
+            trailing_pe=_optional_float(info.get("trailingPE")),
+            forward_pe=_optional_float(info.get("forwardPE")),
+            price_to_book=_optional_float(info.get("priceToBook")),
+            price_to_sales=_optional_float(info.get("priceToSalesTrailing12Months")),
+            dividend_yield=dividend_yield,
+            profit_margins=_optional_float(info.get("profitMargins")),
+            operating_margins=_optional_float(info.get("operatingMargins")),
+            revenue_growth=_optional_float(info.get("revenueGrowth")),
+            earnings_growth=_optional_float(info.get("earningsGrowth")),
+            return_on_equity=_optional_float(info.get("returnOnEquity")),
+            debt_to_equity=_optional_float(info.get("debtToEquity")),
+            total_cash=_optional_float(info.get("totalCash")),
+            total_debt=_optional_float(info.get("totalDebt")),
+            beta=_optional_float(info.get("beta")),
+            fifty_two_week_high=_optional_float(info.get("fiftyTwoWeekHigh")),
+            fifty_two_week_low=_optional_float(info.get("fiftyTwoWeekLow")),
+            total_assets=_optional_float(info.get("totalAssets")),
+            ytd_return=_optional_float(info.get("ytdReturn")),
+            three_year_avg_return=_optional_float(info.get("threeYearAverageReturn")),
         )
 
     def _dataframe_to_prices(

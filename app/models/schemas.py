@@ -77,6 +77,39 @@ class CompanyInfo(BaseModel):
     market_cap: Optional[float] = None
 
 
+class FundamentalSnapshot(BaseModel):
+    """
+    Fundamental metrics from a direct market-data API (yfinance).
+
+    Used by the Fundamental Agent later instead of SEC file-storage RAG.
+    Fields that the provider does not return stay None (common for ETFs
+    like SPY, where company income-statement fields do not apply).
+    """
+
+    ticker: str
+    quote_type: Optional[str] = None  # e.g. ETF, EQUITY
+    trailing_pe: Optional[float] = None
+    forward_pe: Optional[float] = None
+    price_to_book: Optional[float] = None
+    price_to_sales: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    profit_margins: Optional[float] = None
+    operating_margins: Optional[float] = None
+    revenue_growth: Optional[float] = None
+    earnings_growth: Optional[float] = None
+    return_on_equity: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    total_cash: Optional[float] = None
+    total_debt: Optional[float] = None
+    beta: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    # ETF / index-friendly extras (often filled for SPY)
+    total_assets: Optional[float] = None
+    ytd_return: Optional[float] = None
+    three_year_avg_return: Optional[float] = None
+
+
 class NewsItem(BaseModel):
     """One recent news headline about a ticker."""
 
@@ -93,6 +126,7 @@ class DataAgentResult(BaseModel):
     company_info: CompanyInfo
     price_history: list[MarketPrice]
     news: list[NewsItem] = Field(default_factory=list)
+    fundamentals: Optional[FundamentalSnapshot] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     records_count: int
