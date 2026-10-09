@@ -54,7 +54,7 @@ class DataAgent(BaseAgent):
         Fetch and clean market data for a ticker.
 
         Args:
-            ticker: Stock symbol (e.g. "AAPL" or "aapl").
+            ticker: Market symbol (default focus: "SPY" for the S&P 500).
             start: Optional start date YYYY-MM-DD.
             end: Optional end date YYYY-MM-DD.
             period: yfinance period used when start/end are omitted (default "1y").

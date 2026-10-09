@@ -69,7 +69,7 @@ Examples of data it will provide later:
 
 ## Request Flow (Future)
 
-1. The user sends a ticker to FastAPI (for example `AAPL`).
+1. The user sends a market symbol to FastAPI (for example `SPY` for the S&P 500).
 2. FastAPI calls the **Coordinator Agent**.
 3. The Coordinator asks specialized agents for their signals.
 4. The **Risk Agent** reviews risk before the final decision.

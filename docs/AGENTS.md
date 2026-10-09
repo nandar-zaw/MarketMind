@@ -13,7 +13,7 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 **Status:** Implemented (market data + company info + recent news)
 
 **Input:**
-- Stock ticker symbol (for example `AAPL`)
+- Market symbol focused on the S&P 500 (for example `SPY`; aliases like `^GSPC` resolve to `SPY`)
 - Optional `start` / `end` dates (`YYYY-MM-DD`)
 - Optional `period` (default approximately one year: `1y`)
 - Optional `as_of_date` to block future price observations (for later backtesting)

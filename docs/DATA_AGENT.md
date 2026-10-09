@@ -11,7 +11,7 @@ decisions. Those belong to later agents and phases.
 
 ## 1. Purpose
 
-Given a stock ticker such as `AAPL`, the DataAgent:
+Given a market symbol such as `SPY` (S&P 500 ETF proxy), the DataAgent:
 
 - downloads historical OHLCV prices (Open, High, Low, Close, Volume)
 - collects basic company information (name, sector, industry, exchange, currency, market cap)

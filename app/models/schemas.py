@@ -13,7 +13,10 @@ from pydantic import BaseModel, Field
 class AnalysisRequest(BaseModel):
     """Request to analyze a stock ticker."""
 
-    ticker: str = Field(..., description="Stock ticker symbol, e.g. AAPL")
+    ticker: str = Field(
+        ...,
+        description="Market ticker symbol; MarketMind focuses on SPY (S&P 500)",
+    )
     horizon_days: int = Field(
         default=5,
         description="Prediction horizon in trading days",

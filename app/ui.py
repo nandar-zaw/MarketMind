@@ -21,8 +21,10 @@ import gradio as gr
 
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.models.schemas import AgentResult, FinalRecommendation
+from app.utils.symbols import SP500_SYMBOL
 
-TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
+# MarketMind currently focuses on the S&P 500 (SPY ETF proxy via yfinance).
+TICKERS = [SP500_SYMBOL]
 HORIZONS = [3, 5, 10]
 
 _coordinator = CoordinatorAgent()
@@ -109,8 +111,8 @@ with gr.Blocks(title="MarketMind") as demo:
     with gr.Row():
         ticker_input = gr.Dropdown(
             choices=TICKERS,
-            value="AAPL",
-            label="Ticker (companies with SEC filings in the vector store)",
+            value=SP500_SYMBOL,
+            label="Market (S&P 500 via SPY ETF proxy on Yahoo Finance)",
         )
         horizon_input = gr.Dropdown(
             choices=HORIZONS,

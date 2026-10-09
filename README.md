@@ -33,7 +33,7 @@ Each agent studies a different type of information.
 
 ### Future final output
 
-For a given ticker (for example `AAPL`), MarketMind will return:
+For the S&P 500 (symbol `SPY` on Yahoo Finance / yfinance), MarketMind will return:
 
 - **BUY**, **HOLD**, or **SELL**
 - a confidence score
@@ -132,15 +132,18 @@ Expected `/health` response:
 }
 ```
 
-Analyze a ticker (Risk + Coordinator demo):
+Analyze the S&P 500 proxy (Risk + Coordinator demo):
 
 ```bash
 # easy for a browser demo
-open http://127.0.0.1:8000/analyze/AAPL
+open http://127.0.0.1:8000/analyze/SPY
 
 # or POST
-curl -X POST http://127.0.0.1:8000/analyze/AAPL
+curl -X POST http://127.0.0.1:8000/analyze/SPY
 ```
+
+`SPY` is the S&P 500 ETF used as our market symbol. Aliases such as
+`^GSPC` / `SPX` are resolved to `SPY` before analysis.
 
 Try a rejected input to show an input guardrail:
 
