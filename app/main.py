@@ -1,15 +1,18 @@
 """
 MarketMind FastAPI application.
 
-Phase 1 health check plus a working analyze endpoint driven by
-Coordinator + Risk Manager (with input / tool / output guardrails).
+Serves the analyze API (Coordinator + Risk Manager with input /
+tool / output guardrails) and mounts the Gradio UI at "/" so a
+single process (for example one Heroku dyno) exposes both.
 """
 
+import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.guardrails import GuardrailTripwire
+from app.ui import demo as gradio_demo
 
 app = FastAPI(
     title="MarketMind",
@@ -57,3 +60,8 @@ async def analyze(ticker: str, horizon_days: int = 5):
     POST remains the main API style.
     """
     return await _run_analysis(ticker, horizon_days=horizon_days)
+
+
+# Mount the Gradio UI at the root so one process serves the API
+# (/health, /analyze/{ticker}) and the interactive dashboard.
+app = gr.mount_gradio_app(app, gradio_demo, path="/")
