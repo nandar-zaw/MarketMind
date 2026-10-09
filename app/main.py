@@ -1,16 +1,22 @@
 """
 MarketMind FastAPI application.
 
-Phase 1 health check plus a working analyze endpoint driven by
-Coordinator + Risk Manager (with input / tool / output guardrails).
+Serves the analyze API (Coordinator + Risk Manager with input /
+tool / output guardrails) and mounts the Gradio UI at "/" so a
+single process (for example one Heroku dyno) exposes both.
 """
 
+import inspect
+
+import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.guardrails import GuardrailTripwire, input_guardrail
 from app.memory import DecisionMemory
+from app.ui import _CSS, _THEME
+from app.ui import demo as gradio_demo
 
 app = FastAPI(
     title="MarketMind",
@@ -76,3 +82,14 @@ async def history(ticker: str, limit: int = 20):
         )
     limit = max(1, min(limit, 100))
     return {"ticker": symbol, "decisions": DecisionMemory().history(symbol, limit=limit)}
+
+
+# Mount the Gradio UI at the root so one process serves the API
+# (/health, /analyze/{ticker}, /history/{ticker}) and the interactive
+# dashboard. API routes must be registered above this line.
+# Gradio 6 takes theme/css at mount time (the Blocks arguments are
+# ignored when mounted); Gradio 5 reads them from the Blocks object.
+_mount_kwargs = {}
+if "theme" in inspect.signature(gr.mount_gradio_app).parameters:
+    _mount_kwargs = {"theme": _THEME, "css": _CSS}
+app = gr.mount_gradio_app(app, gradio_demo, path="/", **_mount_kwargs)

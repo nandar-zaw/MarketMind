@@ -50,7 +50,15 @@ class DecisionMemory:
     """Save and look up past Coordinator decisions per ticker."""
 
     def __init__(self, path: str | Path | None = None):
-        self.path = Path(path or os.getenv("MARKETMIND_MEMORY_PATH") or DEFAULT_PATH)
+        self._path = Path(path) if path else None
+
+    @property
+    def path(self) -> Path:
+        # Resolved on each use so a long-lived Coordinator (the UI keeps one)
+        # honours MARKETMIND_MEMORY_PATH set after it was created.
+        if self._path is not None:
+            return self._path
+        return Path(os.getenv("MARKETMIND_MEMORY_PATH") or DEFAULT_PATH)
 
     def record(
         self,
