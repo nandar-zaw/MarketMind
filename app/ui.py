@@ -27,6 +27,8 @@ flight the UI reports staged progress, and the chart window
 without new data or model calls.
 """
 
+import inspect
+
 import gradio as gr
 import pandas as pd
 
@@ -367,4 +369,8 @@ with gr.Blocks(title="MarketMind", theme=_THEME, css=_CSS) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    # Gradio 6 takes theme/css at launch(); Gradio 5 takes them on Blocks.
+    if "theme" in inspect.signature(demo.launch).parameters:
+        demo.launch(theme=_THEME, css=_CSS)
+    else:
+        demo.launch()
