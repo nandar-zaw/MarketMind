@@ -128,7 +128,8 @@ def test_analyze_fills_panels_chart_and_company():
     assert chart is not None
     assert set(chart["Series"].unique()) == {"Close", "SMA20", "SMA50"}
     # Full frame is kept in state for instant window re-filtering;
-    # with the default 1Y window the plot shows the same rows.
+    # the default 6M window still covers this short fake history, so
+    # the plot shows the same rows.
     assert out[17] is not None
     assert len(out[17]) == len(chart)
     # Company header.
@@ -181,6 +182,19 @@ def test_chart_window_filters_loaded_frame():
     assert dates.min() >= dates.max() - pd.DateOffset(months=3)
     # 1Y and unknown windows leave the frame untouched.
     assert ui._filter_chart(frame, "1Y") is frame
+
+
+def test_chart_frame_uses_weekly_points():
+    import pandas as pd
+
+    frame = ui._chart_frame(_data(n=400))
+    dates = pd.to_datetime(frame["date"]).drop_duplicates().sort_values()
+    # A year-plus of daily data collapses to roughly one point per
+    # week, so the dates under the axis stay readable instead of
+    # stacking into a strip.
+    assert 40 <= len(dates) <= 90
+    gaps = dates.diff().dropna().dt.days
+    assert gaps.min() >= 3
 
 
 def test_analyze_respects_selected_window(monkeypatch):
