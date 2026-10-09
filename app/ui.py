@@ -31,8 +31,15 @@ from app.utils.symbols import SP500_SYMBOL
 
 TICKERS = [SP500_SYMBOL]
 HORIZONS = [3, 5, 10]
-CHART_WINDOWS = ["3M", "6M", "1Y"]
-_WINDOW_TRADING_DAYS = {"3M": 63, "6M": 126, "1Y": 252}
+# 1D = intraday (5-minute bars); other windows use daily closes.
+CHART_WINDOWS = ["1D", "5D", "1M", "3M", "6M", "1Y"]
+_WINDOW_TRADING_DAYS = {
+    "5D": 5,
+    "1M": 21,
+    "3M": 63,
+    "6M": 126,
+    "1Y": 252,
+}
 
 _BG = "#0a1210"
 _PANEL = "#101a17"
@@ -461,7 +468,7 @@ def _empty_chart(message: str = "Run Analyze to load S&P 500 price history."):
 
 
 def build_price_frame(data: DataAgentResult) -> pd.DataFrame:
-    """Build chart DataFrame: date, Price, SMA20, SMA50."""
+    """Build daily chart DataFrame: date, Price, SMA20, SMA50."""
     if not data.price_history:
         return pd.DataFrame(columns=["date", "Price", "SMA20", "SMA50"])
 
@@ -477,34 +484,123 @@ def build_price_frame(data: DataAgentResult) -> pd.DataFrame:
     )
 
 
-def plot_price_history(
-    frame: Optional[pd.DataFrame],
-    window: str = "1Y",
-) -> plt.Figure:
-    """Draw Close + SMA20 + SMA50 for the selected window."""
-    if frame is None or frame.empty:
-        return _empty_chart()
+def build_intraday_frame(raw: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """
+    Build a 1D chart DataFrame from yfinance intraday bars.
+
+    Uses shorter moving averages suited to 5-minute data (SMA20 / SMA50
+    of 5m bars ≈ last ~1.5–4 trading hours).
+    """
+    if raw is None or raw.empty or "Close" not in raw.columns:
+        return pd.DataFrame(columns=["date", "Price", "SMA20", "SMA50"])
+
+    closes = raw["Close"].astype(float)
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(raw.index),
+            "Price": closes.to_numpy(),
+            "SMA20": closes.rolling(window=20, min_periods=5).mean().to_numpy(),
+            "SMA50": closes.rolling(window=50, min_periods=10).mean().to_numpy(),
+        }
+    ).reset_index(drop=True)
+
+
+def _resolve_chart_view(
+    chart_data: Optional[dict | pd.DataFrame],
+    window: str,
+) -> tuple[pd.DataFrame, str]:
+    """
+    Pick the series for the selected window.
+
+    Returns (view_frame, title_suffix).
+    Supports legacy plain DataFrames (daily-only) for tests.
+    """
+    window = (window or "1Y").upper()
+
+    if isinstance(chart_data, pd.DataFrame) or chart_data is None:
+        daily = chart_data if isinstance(chart_data, pd.DataFrame) else pd.DataFrame()
+        intraday = pd.DataFrame()
+    else:
+        daily = chart_data.get("daily")
+        intraday = chart_data.get("intraday")
+        if daily is None:
+            daily = pd.DataFrame()
+        if intraday is None:
+            intraday = pd.DataFrame()
+
+    if window == "1D":
+        if intraday is None or intraday.empty:
+            return pd.DataFrame(), "1D · no intraday data"
+        return intraday.copy(), "1D · 5-minute bars"
+
+    if daily is None or daily.empty:
+        return pd.DataFrame(), f"{window} · no daily data"
 
     days = _WINDOW_TRADING_DAYS.get(window, 252)
-    view = frame.tail(days).copy()
+    view = daily.tail(days).copy()
+    label = {
+        "5D": "5D · daily closes",
+        "1M": "1M · daily closes",
+        "3M": "3M · daily closes",
+        "6M": "6M · daily closes",
+        "1Y": "1Y · daily closes",
+    }.get(window, f"{window} · daily closes")
+    return view, label
+
+
+def plot_price_history(
+    chart_data: Optional[dict | pd.DataFrame] = None,
+    window: str = "1Y",
+    frame: Optional[pd.DataFrame] = None,
+) -> plt.Figure:
+    """
+    Draw Close + SMA overlays for the selected window.
+
+    ``chart_data`` is normally ``{"daily": df, "intraday": df}``.
+    The older ``frame=`` kwarg (daily-only) still works for tests.
+    """
+    if frame is not None and chart_data is None:
+        chart_data = frame
+
+    window_key = (window or "1Y").upper()
+    view, title = _resolve_chart_view(chart_data, window_key)
     if view.empty:
-        return _empty_chart("No price rows in this window.")
+        return _empty_chart(
+            "No price rows in this window."
+            if "no " not in title.lower()
+            else f"Chart unavailable ({title})."
+        )
 
     fig, ax = plt.subplots(figsize=(11, 4.6))
     fig.patch.set_facecolor(_BG)
     ax.set_facecolor(_PANEL)
 
+    y_floor = float(view["Price"].min()) * 0.995
     ax.fill_between(
         view["date"],
         view["Price"],
-        view["Price"].min() * 0.995,
+        y_floor,
         color=_PRICE,
         alpha=0.08,
         linewidth=0,
     )
     ax.plot(view["date"], view["Price"], color=_PRICE, linewidth=1.7, label="Price")
-    ax.plot(view["date"], view["SMA20"], color=_SMA20, linewidth=1.35, label="SMA20")
-    ax.plot(view["date"], view["SMA50"], color=_SMA50, linewidth=1.35, label="SMA50")
+    if view["SMA20"].notna().any():
+        ax.plot(
+            view["date"],
+            view["SMA20"],
+            color=_SMA20,
+            linewidth=1.35,
+            label="SMA20",
+        )
+    if view["SMA50"].notna().any():
+        ax.plot(
+            view["date"],
+            view["SMA50"],
+            color=_SMA50,
+            linewidth=1.35,
+            label="SMA50",
+        )
 
     last = float(view["Price"].iloc[-1])
     ax.annotate(
@@ -519,13 +615,14 @@ def plot_price_history(
     )
 
     ax.set_title(
-        f"Price history ({window}) · SMA20 / SMA50",
+        f"Price history · {title}",
         color=_TEXT,
         fontsize=12,
         pad=10,
         loc="left",
     )
     ax.set_ylabel("Price", color=_MUTED)
+    ax.set_xlabel("time" if window_key == "1D" else "date", color=_MUTED)
     ax.tick_params(colors=_MUTED, labelsize=8)
     ax.grid(True, color=_GRID, linewidth=0.7, alpha=0.9)
     for spine in ax.spines.values():
@@ -600,8 +697,17 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
     try:
         final = await _coordinator.analyze(ticker, horizon_days=horizon_days)
         data = await _data_agent.analyze(ticker)
-        frame = build_price_frame(data)
-        chart = plot_price_history(frame, chart_window or "1Y")
+        daily_frame = build_price_frame(data)
+        try:
+            intraday_raw = _data_agent.market_data.get_intraday_ohlcv(ticker)
+            intraday_frame = build_intraday_frame(intraday_raw)
+        except Exception:
+            # Daily chart still works if intraday is unavailable (weekends, etc.).
+            intraday_frame = pd.DataFrame(
+                columns=["date", "Price", "SMA20", "SMA50"]
+            )
+        chart_bundle = {"daily": daily_frame, "intraday": intraday_frame}
+        chart = plot_price_history(chart_bundle, chart_window or "1Y")
     except Exception as exc:
         err = (
             f"<div class='mm-decision sell'><div class='mm-decision-kicker'>Error</div>"
@@ -626,7 +732,7 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
         _decision_html(final),
         _snapshot_html(data),
         chart,
-        frame,
+        chart_bundle,
         _agent_card_html("Technical", by_agent.get("technical_agent")),
         _agent_card_html("Sentiment", by_agent.get("sentiment_agent")),
         _agent_card_html("Fundamental", by_agent.get("fundamental_agent")),
@@ -635,9 +741,9 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
     )
 
 
-def refresh_chart(frame: Optional[pd.DataFrame], chart_window: str):
+def refresh_chart(chart_data: Optional[dict | pd.DataFrame], chart_window: str):
     """Re-draw the chart for a new window without re-running agents."""
-    return plot_price_history(frame, chart_window or "1Y")
+    return plot_price_history(chart_data, chart_window or "1Y")
 
 
 theme = gr.themes.Soft(
@@ -717,7 +823,7 @@ with gr.Blocks(title="MarketMind") as demo:
             choices=CHART_WINDOWS,
             value="1Y",
             label="Chart window",
-            info="Re-filters instantly — no new agent run",
+            info="1D = intraday 5m bars · others = daily closes (no new agent run)",
         )
         price_frame_state = gr.State(None)
 

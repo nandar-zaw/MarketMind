@@ -193,6 +193,56 @@ class MarketDataService:
         )
         return prices
 
+    def get_intraday_ohlcv(
+        self,
+        ticker: str,
+        *,
+        period: str = "1d",
+        interval: str = "5m",
+    ) -> pd.DataFrame:
+        """
+        Return an intraday OHLCV DataFrame for charting (e.g. 1D / 5m).
+
+        Columns are normalized to Open/High/Low/Close/Volume with a
+        DatetimeIndex. Used by the Gradio daily chart — not by agents.
+        """
+        symbol = _validate_ticker(ticker)
+        logger.info(
+            "Fetching intraday OHLCV for %s (period=%s, interval=%s)",
+            symbol,
+            period,
+            interval,
+        )
+        try:
+            frame = yf.Ticker(symbol).history(period=period, interval=interval)
+        except Exception as exc:
+            logger.error("Provider failure for %s intraday: %s", symbol, exc)
+            raise MarketDataError(
+                f"Failed to fetch intraday history for {symbol}."
+            ) from exc
+
+        if frame is None or frame.empty:
+            raise MarketDataError(
+                f"No intraday market data found for ticker '{symbol}'."
+            )
+
+        if isinstance(frame.columns, pd.MultiIndex):
+            frame.columns = frame.columns.get_level_values(0)
+
+        frame = frame.rename(columns=str.title)
+        if "Close" not in frame.columns:
+            raise MarketDataError(
+                f"Intraday history for {symbol} is missing a Close column."
+            )
+
+        frame = frame.dropna(subset=["Close"]).sort_index()
+        logger.info(
+            "Retrieved %s intraday bars for %s",
+            len(frame),
+            symbol,
+        )
+        return frame
+
     def _fetch_yahoo_info(self, symbol: str) -> dict:
         """Fetch the raw yfinance ``.info`` dict for one symbol."""
         try:
