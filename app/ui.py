@@ -8,8 +8,8 @@ Then open the local URL printed in the terminal (usually
 http://127.0.0.1:7860).
 
 One Analyze click runs the Coordinator once and fills the decision
-banner, market snapshot, price chart, specialist cards, and guardrail
-audit. Chart windows (3M / 6M / 1Y) re-filter without a new analysis.
+banner, market snapshot, price chart, specialist cards, and a quick
+summary / recommendation. Chart windows re-filter without a new analysis.
 """
 
 from __future__ import annotations
@@ -251,6 +251,83 @@ _CUSTOM_CSS = """
   white-space: pre-wrap;
 }
 
+.mm-summary {
+  border: 1px solid var(--mm-line);
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(16, 26, 23, 0.98), rgba(10, 18, 16, 0.96));
+  padding: 1.15rem 1.3rem 1.25rem;
+  margin: 0.35rem 0 0.5rem;
+}
+.mm-summary-kicker {
+  color: var(--mm-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.45rem;
+}
+.mm-summary-title {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--mm-text);
+  margin: 0 0 0.65rem;
+  line-height: 1.25;
+}
+.mm-summary-title.buy { color: var(--mm-accent); }
+.mm-summary-title.hold { color: var(--mm-warn); }
+.mm-summary-title.sell { color: var(--mm-danger); }
+.mm-summary-lead {
+  color: #c9d8d0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0 0 0.9rem;
+}
+.mm-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+@media (max-width: 820px) {
+  .mm-summary-grid { grid-template-columns: 1fr; }
+}
+.mm-summary-chip {
+  border: 1px solid var(--mm-line);
+  border-radius: 12px;
+  background: rgba(10, 18, 16, 0.65);
+  padding: 0.65rem 0.75rem;
+}
+.mm-summary-chip-label {
+  color: var(--mm-muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mm-summary-chip-value {
+  margin-top: 0.2rem;
+  color: var(--mm-text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.mm-summary-bullets {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #c9d8d0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.mm-summary-bullets li {
+  margin: 0.2rem 0;
+}
+.mm-summary-note {
+  margin: 0.75rem 0 0;
+  color: var(--mm-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 footer, .svelte-1edxm74 { display: none !important; }
 
 /* Premium horizontal control toolbar */
@@ -432,17 +509,151 @@ def _agent_card_html(title: str, result: AgentResult | None) -> str:
 """
 
 
-def _guardrail_markdown(final: FinalRecommendation) -> str:
-    if not final.guardrails:
-        return "_No guardrail events recorded._"
-    lines = ["| Kind | Check | Result | Detail |", "| --- | --- | --- | --- |"]
-    for event in final.guardrails[:12]:
-        mark = "pass" if event.passed else "fail"
-        detail = event.detail.replace("|", "/")
-        lines.append(f"| {event.kind} | `{event.name}` | **{mark}** | {detail} |")
-    if len(final.guardrails) > 12:
-        lines.append(f"| … | … | … | +{len(final.guardrails) - 12} more |")
-    return "\n".join(lines)
+def _agent_by_name(
+    results: list[AgentResult], name: str
+) -> AgentResult | None:
+    for result in results:
+        if result.agent_name == name:
+            return result
+    return None
+
+
+def _signal_phrase(signal: str | None) -> str:
+    if not signal or signal == "unavailable":
+        return "no vote"
+    return signal.strip().lower()
+
+
+def _recommendation_headline(rec: str) -> str:
+    mapping = {
+        "BUY": "Lean into strength — bias toward BUY",
+        "HOLD": "Stay patient — bias toward HOLD",
+        "SELL": "Protect capital — bias toward SELL",
+    }
+    return mapping.get(rec.upper(), f"Recommendation: {rec.upper()}")
+
+
+def _recommendation_action(rec: str, horizon_days: int, risk: str) -> str:
+    rec = rec.upper()
+    risk = (risk or "medium").lower()
+    if rec == "BUY":
+        base = (
+            f"For the next ~{horizon_days} trading days, evidence favors adding "
+            "or keeping exposure if it fits your plan."
+        )
+    elif rec == "SELL":
+        base = (
+            f"For the next ~{horizon_days} trading days, evidence favors reducing "
+            "exposure or waiting for a cleaner setup."
+        )
+    else:
+        base = (
+            f"For the next ~{horizon_days} trading days, evidence is mixed — "
+            "prefer waiting over forcing a trade."
+        )
+    if risk == "high":
+        return base + " Risk is HIGH, so keep position size conservative."
+    if risk == "low":
+        return base + " Risk looks relatively contained."
+    return base + " Risk is moderate — size positions carefully."
+
+
+def _summary_html(final: FinalRecommendation) -> str:
+    """Footer panel: plain-language takeaway instead of a guardrail audit table."""
+    rec = (final.recommendation or "HOLD").upper()
+    css = _signal_class(rec)
+    tech = _agent_by_name(final.agent_results, "technical_agent")
+    sent = _agent_by_name(final.agent_results, "sentiment_agent")
+    fund = _agent_by_name(final.agent_results, "fundamental_agent")
+    risk = _agent_by_name(final.agent_results, "risk_agent")
+    risk_signal = _signal_phrase(risk.signal if risk else None)
+    if risk_signal == "no vote":
+        risk_signal = "unknown"
+
+    votes = []
+    for label, agent in (
+        ("Technical", tech),
+        ("Sentiment", sent),
+        ("Fundamental", fund),
+    ):
+        votes.append(f"{label}: {_signal_phrase(agent.signal if agent else None)}")
+
+    bullets: list[str] = []
+    if tech and tech.signal != "unavailable":
+        bullets.append(f"Technical leans {tech.signal} (confidence {tech.confidence:.2f}).")
+    elif tech:
+        bullets.append("Technical did not vote (unavailable).")
+
+    if sent and sent.signal != "unavailable":
+        bullets.append(f"News sentiment leans {sent.signal} (confidence {sent.confidence:.2f}).")
+    elif sent:
+        bullets.append("Sentiment did not vote (too little news or unavailable).")
+
+    if fund and fund.signal != "unavailable":
+        bullets.append(
+            f"Fundamentals lean {fund.signal} (confidence {fund.confidence:.2f})."
+        )
+    elif fund:
+        bullets.append("Fundamentals did not vote (metrics unavailable).")
+
+    if risk and risk.signal != "unavailable":
+        bullets.append(f"Risk overlay is {risk.signal.upper()}.")
+
+    action = _recommendation_action(rec, final.horizon_days, risk_signal)
+    bullet_html = "".join(f"<li>{html.escape(item)}</li>" for item in bullets)
+    vote_line = " · ".join(votes)
+
+    return f"""
+<div class="mm-summary">
+  <div class="mm-summary-kicker">Quick summary · {html.escape(final.ticker)} · {final.horizon_days} trading days</div>
+  <h2 class="mm-summary-title {css}">{html.escape(_recommendation_headline(rec))}</h2>
+  <p class="mm-summary-lead">{html.escape(action)}</p>
+  <div class="mm-summary-grid">
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Decision</div>
+      <div class="mm-summary-chip-value">{html.escape(rec)} · conf {final.confidence:.2f}</div>
+    </div>
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Specialist votes</div>
+      <div class="mm-summary-chip-value">{html.escape(vote_line)}</div>
+    </div>
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Risk</div>
+      <div class="mm-summary-chip-value">{html.escape(risk_signal.upper())}</div>
+    </div>
+  </div>
+  <ul class="mm-summary-bullets">{bullet_html}</ul>
+  <p class="mm-summary-note">Course demonstration only. Not financial advice.</p>
+</div>
+"""
+
+
+def _idle_summary() -> str:
+    return """
+<div class="mm-summary">
+  <div class="mm-summary-kicker">Quick summary</div>
+  <h2 class="mm-summary-title hold">Run Analyze for a recommendation</h2>
+  <p class="mm-summary-lead">
+    After one run you will see a plain-language takeaway, how the specialists voted,
+    and what the risk overlay implies for the next few trading days.
+  </p>
+  <div class="mm-summary-grid">
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Decision</div>
+      <div class="mm-summary-chip-value">—</div>
+    </div>
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Specialist votes</div>
+      <div class="mm-summary-chip-value">Waiting for Analyze</div>
+    </div>
+    <div class="mm-summary-chip">
+      <div class="mm-summary-chip-label">Risk</div>
+      <div class="mm-summary-chip-value">—</div>
+    </div>
+  </div>
+  <p class="mm-summary-note">Course demonstration only. Not financial advice.</p>
+</div>
+"""
 
 
 def _empty_chart(message: str = "Run Analyze to load S&P 500 price history."):
@@ -715,6 +926,14 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
             f"<div class='mm-decision-explain'><strong>{type(exc).__name__}:</strong> {exc}</div></div>"
         )
         empty_agent = _agent_card_html("Agent", None)
+        err_summary = f"""
+<div class="mm-summary">
+  <div class="mm-summary-kicker">Quick summary</div>
+  <h2 class="mm-summary-title sell">Analysis did not finish</h2>
+  <p class="mm-summary-lead"><strong>{html.escape(type(exc).__name__)}:</strong> {html.escape(str(exc))}</p>
+  <p class="mm-summary-note">Fix the error above, then run Analyze again.</p>
+</div>
+"""
         return (
             err,
             _idle_snapshot(),
@@ -724,7 +943,7 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
             empty_agent,
             empty_agent,
             empty_agent,
-            f"**Error:** `{type(exc).__name__}: {exc}`",
+            err_summary,
         )
 
     by_agent = {r.agent_name: r for r in final.agent_results}
@@ -737,7 +956,7 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
         _agent_card_html("Sentiment", by_agent.get("sentiment_agent")),
         _agent_card_html("Fundamental", by_agent.get("fundamental_agent")),
         _agent_card_html("Risk", by_agent.get("risk_agent")),
-        _guardrail_markdown(final),
+        _summary_html(final),
     )
 
 
@@ -835,8 +1054,7 @@ with gr.Blocks(title="MarketMind") as demo:
         fundamental_out = gr.HTML(value=_idle_agent("Fundamental"))
         risk_out = gr.HTML(value=_idle_agent("Risk"))
 
-    with gr.Accordion("Guardrail audit trail", open=False):
-        guardrails_out = gr.Markdown("_Run Analyze to see input / tool / output checks._")
+    summary_out = gr.HTML(value=_idle_summary())
 
     analyze_button.click(
         fn=analyze,
@@ -850,7 +1068,7 @@ with gr.Blocks(title="MarketMind") as demo:
             sentiment_out,
             fundamental_out,
             risk_out,
-            guardrails_out,
+            summary_out,
         ],
     )
 
