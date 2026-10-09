@@ -9,11 +9,15 @@ A specialist that fails or cannot run is marked ``unavailable`` and does
 not vote; one broken agent never sinks the whole decision. If the
 Technical agent is unavailable, the Coordinator falls back to a small,
 labeled short-horizon return vote so price action is still represented.
+
+Each decision is saved to decision memory. The next analysis of the same
+ticker reports what changed since then; memory never changes the vote.
 """
 
 from __future__ import annotations
 
 import inspect
+import logging
 
 import pandas as pd
 
@@ -31,12 +35,16 @@ from app.guardrails import (
     tool_guardrail,
     tool_output_guardrail,
 )
+from app.memory import DecisionMemory
 from app.models.schemas import (
     AgentResult,
     DataAgentResult,
+    DecisionRecord,
     FinalRecommendation,
     GuardrailEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 MARKET_DATA_PERIOD = "1y"
 
@@ -67,7 +75,9 @@ class CoordinatorAgent(BaseAgent):
         data_agent: DataAgent | None = None,
         risk_agent: RiskAgent | None = None,
         specialists: dict[str, BaseAgent] | None = None,
+        memory: DecisionMemory | None = None,
     ):
+        self.memory = memory or DecisionMemory()
         self.data_agent = data_agent or DataAgent()
         self.risk_agent = risk_agent or RiskAgent()
         self.specialists = specialists or {
@@ -117,7 +127,22 @@ class CoordinatorAgent(BaseAgent):
             guardrails=guardrails,
         )
         final, _ = decision_output_guardrail(draft, risk_signal=risk_result.signal)
-        return final
+        return self._remember(final, last_close=float(close.iloc[-1]))
+
+    def _remember(self, final: FinalRecommendation, last_close: float) -> FinalRecommendation:
+        """Compare with the previous decision for this ticker, then save this one."""
+        try:
+            previous = self.memory.last(final.ticker, horizon_days=final.horizon_days)
+            self.memory.record(final, last_close=last_close)
+        except Exception as exc:  # memory is context; it must not block a decision
+            logger.warning("Decision memory unavailable for %s: %s", final.ticker, exc)
+            return final
+        return final.model_copy(
+            update={
+                "previous_decision": previous,
+                "explanation": f"{final.explanation} {_memory_note(final, previous)}",
+            }
+        )
 
     async def _load_market_data(
         self, ticker: str, guardrails: list[GuardrailEvent]
@@ -176,6 +201,30 @@ def _unavailable(name: str, explanation: str) -> AgentResult:
             explanation=explanation,
         )
     )
+
+
+def _memory_note(final: FinalRecommendation, previous: DecisionRecord | None) -> str:
+    if previous is None:
+        return f"Memory: this is the first recorded analysis of {final.ticker}."
+
+    when = previous.analyzed_at.strftime("%Y-%m-%d %H:%M UTC")
+    if previous.recommendation == final.recommendation:
+        head = f"Memory: unchanged from {previous.recommendation} on {when}"
+    else:
+        head = (
+            f"Memory: changed from {previous.recommendation} on {when} "
+            f"to {final.recommendation}"
+        )
+
+    current = {r.agent_name: r.signal for r in final.agent_results}
+    changes = [
+        f"{name} {previous.agent_signals[name]}->{signal}"
+        for name, signal in current.items()
+        if name in previous.agent_signals and previous.agent_signals[name] != signal
+    ]
+    if changes:
+        return f"{head}; what changed: {', '.join(changes)}."
+    return f"{head}; agent votes are the same."
 
 
 def _accepts_data(agent: BaseAgent) -> bool:

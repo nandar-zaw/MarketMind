@@ -4,7 +4,7 @@ Pydantic schemas for MarketMind requests and responses.
 These models define the structured data shapes used across agents.
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -38,6 +38,19 @@ class GuardrailEvent(BaseModel):
     detail: str
 
 
+class DecisionRecord(BaseModel):
+    """One past Coordinator decision, as stored in decision memory."""
+
+    ticker: str
+    analyzed_at: datetime
+    horizon_days: int
+    recommendation: str
+    confidence: float
+    risk_level: Optional[str] = None
+    agent_signals: dict[str, str] = Field(default_factory=dict)
+    last_close: Optional[float] = None  # price when decided, for later evaluation
+
+
 class FinalRecommendation(BaseModel):
     """Final coordinated recommendation for a ticker."""
 
@@ -48,6 +61,7 @@ class FinalRecommendation(BaseModel):
     horizon_days: int = 5
     agent_results: list[AgentResult]
     guardrails: list[GuardrailEvent] = Field(default_factory=list)
+    previous_decision: Optional[DecisionRecord] = None
 
 
 class MarketPrice(BaseModel):

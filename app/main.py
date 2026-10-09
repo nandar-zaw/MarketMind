@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.agents.coordinator_agent import CoordinatorAgent
-from app.guardrails import GuardrailTripwire
+from app.guardrails import GuardrailTripwire, input_guardrail
+from app.memory import DecisionMemory
 
 app = FastAPI(
     title="MarketMind",
@@ -57,3 +58,21 @@ async def analyze(ticker: str, horizon_days: int = 5):
     POST remains the main API style.
     """
     return await _run_analysis(ticker, horizon_days=horizon_days)
+
+
+@app.get("/history/{ticker}")
+async def history(ticker: str, limit: int = 20):
+    """Past Coordinator decisions for a ticker from decision memory, newest first."""
+    try:
+        symbol, _ = input_guardrail(ticker)
+    except GuardrailTripwire as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": exc.detail,
+                "guardrail_kind": exc.kind,
+                "guardrail_name": exc.name,
+            },
+        )
+    limit = max(1, min(limit, 100))
+    return {"ticker": symbol, "decisions": DecisionMemory().history(symbol, limit=limit)}
