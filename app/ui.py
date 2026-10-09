@@ -8,8 +8,9 @@ Then open the local URL printed in the terminal (usually
 http://127.0.0.1:7860).
 
 One Analyze click runs the Coordinator once and fills the decision
-hero, KPI strip, price chart, specialist cards, quick summary, and the
-guardrail audit trail. Chart windows re-filter without a new analysis.
+hero, KPI strip, price chart, specialist cards, and quick summary.
+Chart windows re-filter without a new analysis. Guardrails still run
+on every request, but their audit trail stays internal.
 
 This module is written as a small "app shell": a sticky header with
 live status, a command bar, a tabbed workspace, and an API footer.
@@ -426,25 +427,6 @@ _CUSTOM_CSS = """
 .mm-summary-bullets li { margin: 0.22rem 0; }
 .mm-summary-note { margin: 0.85rem 0 0; color: var(--mm-muted); font-size: 0.75rem; line-height: 1.45; }
 
-/* ---------- Audit trail ---------- */
-.mm-audit { display: flex; flex-direction: column; gap: 0.45rem; }
-.mm-audit-row {
-  display: grid; grid-template-columns: 74px minmax(0, 1fr) auto;
-  gap: 0.75rem; align-items: baseline;
-  border: 1px solid var(--mm-line); border-radius: 12px;
-  background: rgba(14, 22, 19, 0.85);
-  padding: 0.6rem 0.8rem; font-size: 0.84rem;
-}
-.mm-audit-kind {
-  color: var(--mm-muted); font-size: 0.66rem; font-weight: 700;
-  letter-spacing: 0.1em; text-transform: uppercase;
-}
-.mm-audit-name { color: var(--mm-text); font-weight: 600; }
-.mm-audit-detail { color: var(--mm-muted); display: block; margin-top: 0.15rem; font-size: 0.8rem; }
-.mm-audit-mark { font-weight: 700; font-size: 0.76rem; }
-.mm-audit-mark.pass { color: var(--mm-accent); }
-.mm-audit-mark.fail { color: var(--mm-danger); }
-
 /* ---------- Footer ---------- */
 footer.svelte-app-footer, .gradio-container > footer { display: none !important; }
 
@@ -605,7 +587,6 @@ def _decision_html(final: FinalRecommendation) -> str:
     <div class="mm-meta-row">
       <span class="mm-meta-pill">Horizon <strong>{final.horizon_days}d</strong></span>
       <span class="mm-meta-pill">Agents consulted <strong>{len(final.agent_results)}</strong></span>
-      <span class="mm-meta-pill">Guardrail checks <strong>{len(final.guardrails)}</strong></span>
     </div>
   </div>
   {_confidence_ring(final.confidence)}
@@ -709,7 +690,7 @@ def _idle_agent(title: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# Quick summary + audit trail
+# Quick summary
 # --------------------------------------------------------------------------
 def _agent_by_name(results: list[AgentResult], name: str) -> AgentResult | None:
     for result in results:
@@ -857,45 +838,6 @@ def _idle_summary() -> str:
   <p class="mm-summary-note">
     Educational prediction only — not financial advice. MarketMind is not
     responsible for any investment decisions or losses.
-  </p>
-</div>
-"""
-
-
-def _audit_html(final: FinalRecommendation | None) -> str:
-    """Render the input / tool / output guardrail trail as readable rows."""
-    if final is None or not final.guardrails:
-        return (
-            "<div class='mm-summary'><div class='mm-summary-kicker'>Guardrail audit</div>"
-            "<p class='mm-summary-lead'>Run Analyze to inspect the input, tool, and "
-            "output checks applied to this request.</p></div>"
-        )
-
-    rows = []
-    for event in final.guardrails:
-        mark_cls = "pass" if event.passed else "fail"
-        mark = "PASS" if event.passed else "BLOCKED"
-        rows.append(
-            f"""
-<div class="mm-audit-row">
-  <div class="mm-audit-kind">{html.escape(event.kind)}</div>
-  <div>
-    <span class="mm-audit-name">{html.escape(event.name)}</span>
-    <span class="mm-audit-detail">{html.escape(event.detail)}</span>
-  </div>
-  <div class="mm-audit-mark {mark_cls}">{mark}</div>
-</div>
-"""
-        )
-    passed = sum(1 for e in final.guardrails if e.passed)
-    return f"""
-<div class="mm-summary">
-  <div class="mm-summary-kicker">Guardrail audit · {passed}/{len(final.guardrails)} checks passed</div>
-  <div class="mm-audit">{"".join(rows)}</div>
-  <p class="mm-summary-note">
-    Input guardrails validate the ticker and horizon. Tool guardrails allow only
-    whitelisted data calls. Output guardrails enforce the BUY / HOLD / SELL schema
-    and cap risky answers.
   </p>
 </div>
 """
@@ -1269,7 +1211,6 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
             empty_agent,
             empty_agent,
             err_summary,
-            _audit_html(None),
         )
 
     by_agent = {r.agent_name: r for r in final.agent_results}
@@ -1284,7 +1225,6 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
         _agent_card_html("Fundamental", by_agent.get("fundamental_agent")),
         _agent_card_html("Risk", by_agent.get("risk_agent")),
         _summary_html(final),
-        _audit_html(final),
     )
 
 
@@ -1380,10 +1320,6 @@ with gr.Blocks(title="MarketMind") as demo:
                 fundamental_out = gr.HTML(value=_idle_agent("Fundamental"))
                 risk_out = gr.HTML(value=_idle_agent("Risk"))
 
-        with gr.Tab("Guardrail audit"):
-            gr.HTML('<div class="mm-section-title">Input · Tool · Output checks</div>')
-            audit_out = gr.HTML(value=_audit_html(None))
-
     analyze_button.click(
         fn=analyze,
         inputs=[ticker_input, horizon_input, chart_window],
@@ -1398,7 +1334,6 @@ with gr.Blocks(title="MarketMind") as demo:
             fundamental_out,
             risk_out,
             summary_out,
-            audit_out,
         ],
     )
 
