@@ -141,9 +141,13 @@ Then open the URL printed in the terminal (usually
 Pick a ticker (default `SPY`, or QQQ / NVDA / TSLA / AAPL / … — or type your
 own), click **Analyze**, and explore chart windows without re-running analysis.
 
-Optional alternate UI (same layout, **Matplotlib charts, no Plotly**):
+Optional alternate UIs (same layout; `app/ui.py` left unchanged):
 
 ```bash
+# Gradio only — SVG chart (no Plotly, no Matplotlib)
+python -m app.ui_gradio_only
+
+# Matplotlib charts (no Plotly)
 python -m app.ui_matplotlib
 ```
 
