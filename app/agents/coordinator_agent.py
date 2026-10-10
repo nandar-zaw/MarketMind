@@ -5,12 +5,13 @@ Job: gather specialist signals, ask Risk Manager to review them, then
 produce one BUY / HOLD / SELL recommendation for the next 5 trading days.
 
 Market data is loaded once through the Data Collector Agent, then shared
-with Technical, Sentiment, and Risk. Fundamental uses its own SEC-filing
-RAG source (not DataAgent).
+with Technical, Sentiment, and Fundamental (run in parallel). Risk runs
+after those specialists, then the Coordinator votes.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, timedelta
 
@@ -160,8 +161,15 @@ class CoordinatorAgent(BaseAgent):
         ticker: str,
         data: DataAgentResult,
     ) -> list[AgentResult]:
-        results: list[AgentResult] = []
-        for name, agent in self.specialists.items():
+        """
+        Run Technical / Sentiment / Fundamental in parallel on shared data.
+
+        Each specialist is independent; failures become ``unavailable`` so
+        one bad agent does not block the others. Risk stays sequential
+        after this method returns.
+        """
+
+        async def _run_one(name: str, agent: BaseAgent) -> AgentResult:
             try:
                 if name in _DATA_CONSUMERS:
                     try:
@@ -171,23 +179,26 @@ class CoordinatorAgent(BaseAgent):
                         raw = await agent.analyze(ticker)
                 else:
                     raw = await agent.analyze(ticker)
-                results.append(specialist_output_guardrail(raw))
+                return specialist_output_guardrail(raw)
             except (NotImplementedError, Exception) as exc:
-                results.append(
-                    specialist_output_guardrail(
-                        AgentResult(
-                            agent_name=name,
-                            signal="unavailable",
-                            confidence=0.0,
-                            explanation=(
-                                f"{name} is unavailable ({type(exc).__name__}: {exc}), "
-                                "so it does not vote. Coordinator uses risk + "
-                                "short-horizon price context instead."
-                            ),
-                        )
+                return specialist_output_guardrail(
+                    AgentResult(
+                        agent_name=name,
+                        signal="unavailable",
+                        confidence=0.0,
+                        explanation=(
+                            f"{name} is unavailable ({type(exc).__name__}: {exc}), "
+                            "so it does not vote. Coordinator uses risk + "
+                            "short-horizon price context instead."
+                        ),
                     )
                 )
-        return results
+
+        return list(
+            await asyncio.gather(
+                *[_run_one(name, agent) for name, agent in self.specialists.items()]
+            )
+        )
 
 
 def _market_prices_to_dataframe(price_history: list[MarketPrice]) -> pd.DataFrame:

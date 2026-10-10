@@ -149,7 +149,7 @@ flowchart TB
 
 ### 2.3 One-sentence architecture
 
-> **Coordinator** loads **Data** once, asks three **specialists** for independent votes, asks **Risk** for a safety level, blends the votes, then **guardrails** ensure the final answer is valid and capital-preserving.
+> **Coordinator** loads **Data** once, asks three **specialists** for independent votes **in parallel**, asks **Risk** for a safety level, blends the votes, then **guardrails** ensure the final answer is valid and capital-preserving.
 
 ---
 
@@ -274,7 +274,7 @@ It only classifies risk so the Coordinator (and output guardrail) can protect ca
 | | |
 | --- | --- |
 | **Job** | Run the pipeline and produce the **only** trading recommendation |
-| **Steps** | Guard input → load Data once → run specialists → run Risk → blend → guard output |
+| **Steps** | Guard input → load Data once → run specialists **in parallel** → run Risk → blend → guard output |
 | **Horizon** | Default **5 trading days** |
 | **Output** | `FinalRecommendation`: BUY/HOLD/SELL, confidence, explanation, evidence, guardrail events |
 
