@@ -16,3 +16,4 @@ def test_normalize_resolves_sp500_aliases():
 
 def test_resolve_keeps_non_index_tickers():
     assert resolve_market_symbol("AAPL") == "AAPL"
+    assert resolve_market_symbol("sp") == "SPY"

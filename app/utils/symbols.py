@@ -14,6 +14,7 @@ SP500_SYMBOL = "SPY"
 # Common names for the S&P 500 → resolved to SP500_SYMBOL before fetch.
 SP500_ALIASES = {
     "SPY": SP500_SYMBOL,
+    "SP": SP500_SYMBOL,  # common shorthand in the UI
     "SPX": SP500_SYMBOL,
     "GSPC": SP500_SYMBOL,
     "^GSPC": SP500_SYMBOL,

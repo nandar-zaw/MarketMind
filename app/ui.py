@@ -10,15 +10,16 @@ http://127.0.0.1:7860).
 The layout is a single-screen "market terminal":
 
 * top bar with live session status and data-source chips
-* quote header (price, change, sparkline) next to the run controls
+* quote header (price, change, sparkline) next to ticker / horizon controls
 * interactive Plotly price chart with segmented window control,
   beside the coordinator verdict and the agent pipeline
 * KPI tiles, analyst brief, headlines, and specialist reports
 * API / data-source footer with the full disclaimer
 
-One Analyze click runs the Coordinator once. Chart windows re-filter
-the cached data without a new analysis. Guardrails still run on every
-request, but their audit trail stays internal.
+Pick a preset ticker (SPY, QQQ, NVDA, …) or type another symbol, then
+click Analyze. Chart windows re-filter the cached data without a new
+analysis. Guardrails still run on every request, but their audit trail
+stays internal.
 """
 
 from __future__ import annotations
@@ -38,11 +39,26 @@ from dotenv import load_dotenv
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.agents.data_agent import DataAgent
 from app.models.schemas import AgentResult, DataAgentResult, FinalRecommendation
-from app.utils.symbols import SP500_SYMBOL
+from app.utils.symbols import SP500_SYMBOL, resolve_market_symbol
 
 load_dotenv(override=True)
 
 HORIZONS = [3, 5, 10]
+# Preset list for the UI selector; users can also type any valid ticker.
+UI_TICKER_CHOICES = [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "AMZN",
+    "GOOGL",
+    "META",
+    "AMD",
+]
 # 1D = intraday (5-minute bars); other windows use daily closes.
 CHART_WINDOWS = ["1D", "5D", "1M", "3M", "6M", "1Y"]
 _WINDOW_TRADING_DAYS = {
@@ -197,6 +213,18 @@ footer, .gradio-container > footer { display: none !important; }
 .mm-controls .mm-ctl-label { display: flex; justify-content: space-between; align-items: center; }
 .mm-controls .mm-ctl-hint { font-size: 0.72rem; color: var(--mm-muted); }
 .mm-controls > div { background: transparent !important; border: none !important; }
+.mm-ticker-select, .mm-ticker-select > div, .mm-ticker-select .wrap {
+  background: transparent !important; border: none !important; padding: 0 !important; box-shadow: none !important;
+}
+.mm-ticker-select input, .mm-ticker-select .secondary-wrap, .mm-ticker-select .container {
+  background: #0a0e15 !important;
+  border: 1px solid var(--mm-line) !important;
+  border-radius: 10px !important;
+  color: var(--mm-text) !important;
+  font-family: var(--mm-mono) !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+}
 
 /* Segmented controls (Gradio Radio restyled) */
 .mm-seg, .mm-seg > div, .mm-seg fieldset { background: transparent !important; border: none !important; padding: 0 !important; box-shadow: none !important; }
@@ -520,7 +548,7 @@ def _header_html() -> str:
   <div class="mm-brand">
     <div class="mm-logo">{_LOGO_SVG}</div>
     <span class="mm-brand-name">MarketMind</span>
-    <span class="mm-brand-tag">S&amp;P 500 · Multi-agent</span>
+    <span class="mm-brand-tag">Multi-agent · equities</span>
   </div>
   <div class="mm-status">
     <span class="mm-chip" title="Approximate NYSE session; exchange holidays are not modelled">
@@ -568,8 +596,8 @@ def _quote_html(data: DataAgentResult, intraday: Optional[pd.DataFrame] = None) 
     direction = _direction(change_pct)
 
     info = data.company_info
-    name = html.escape((info.company_name if info else None) or "S&P 500 proxy")
-    exchange = html.escape((info.exchange if info else None) or "NYSE Arca")
+    name = html.escape((info.company_name if info else None) or data.ticker)
+    exchange = html.escape((info.exchange if info else None) or "—")
     currency = html.escape((info.currency if info else None) or "USD")
     as_of = data.price_history[-1].date.strftime("%b %d, %Y")
 
@@ -599,13 +627,15 @@ def _quote_html(data: DataAgentResult, intraday: Optional[pd.DataFrame] = None) 
 </div>"""
 
 
-def _idle_quote(message: str = "Run an analysis to load live S&P 500 data.") -> str:
+def _idle_quote(
+    message: str = "Pick a ticker and run analysis to load live market data.",
+) -> str:
     return f"""
 <div class="mm-quote">
   <div>
     <div class="mm-quote-id">
       <span class="mm-ticker-badge">{html.escape(SP500_SYMBOL)}</span>
-      <span class="mm-quote-name">SPDR S&amp;P 500 ETF · S&amp;P 500 proxy</span>
+      <span class="mm-quote-name">Select a symbol · default {html.escape(SP500_SYMBOL)}</span>
     </div>
     <div class="mm-quote-price-row">
       <span class="mm-quote-price" style="color:{_MUTED}">—.——</span>
@@ -857,23 +887,26 @@ def _recommendation_headline(rec: str) -> str:
     return mapping.get(rec.upper(), f"Recommendation: {rec.upper()}")
 
 
-def _recommendation_action(rec: str, horizon_days: int, risk: str) -> str:
+def _recommendation_action(
+    rec: str, horizon_days: int, risk: str, ticker: str = SP500_SYMBOL
+) -> str:
     rec = rec.upper()
     risk = (risk or "medium").lower()
+    symbol = (ticker or SP500_SYMBOL).strip().upper() or SP500_SYMBOL
     if rec == "BUY":
         base = (
             f"Over the next ~{horizon_days} trading days the model expects upside "
-            "to outweigh downside for the S&P 500."
+            f"to outweigh downside for {symbol}."
         )
     elif rec == "SELL":
         base = (
             f"Over the next ~{horizon_days} trading days the model expects downside "
-            "pressure on the S&P 500."
+            f"pressure on {symbol}."
         )
     else:
         base = (
             f"Over the next ~{horizon_days} trading days the signals are mixed and "
-            "no clear direction stands out."
+            f"no clear direction stands out for {symbol}."
         )
     if risk == "high":
         return base + " The risk overlay is HIGH, which lowers conviction."
@@ -906,7 +939,7 @@ def _summary_html(final: FinalRecommendation) -> str:
 <div class="mm-card mm-brief">
   <div class="mm-kicker">Analyst brief · {html.escape(final.ticker)}</div>
   <h2 class="{css}">{html.escape(_recommendation_headline(rec))}</h2>
-  <p>{html.escape(_recommendation_action(rec, final.horizon_days, risk_signal))}</p>
+  <p>{html.escape(_recommendation_action(rec, final.horizon_days, risk_signal, final.ticker))}</p>
   <ul>{bullet_html}</ul>
   <p class="mm-brief-note">Model output for education only — not a recommendation to trade.</p>
 </div>"""
@@ -1022,7 +1055,7 @@ def _base_layout(fig: go.Figure, height: int = 380) -> None:
     )
 
 
-def _empty_chart(message: str = "Run an analysis to load S&P 500 price history.") -> go.Figure:
+def _empty_chart(message: str = "Run an analysis to load price history.") -> go.Figure:
     fig = go.Figure()
     _base_layout(fig)
     fig.update_layout(
@@ -1327,7 +1360,7 @@ def _api_footer_html() -> str:
 <div class="mm-footer">
   <div class="mm-section-head">
     <div class="mm-section-title">APIs &amp; data sources</div>
-    <div class="mm-card-sub">Focus symbol <b>{html.escape(SP500_SYMBOL)}</b> (S&amp;P 500 ETF proxy) · no SEC file storage required</div>
+    <div class="mm-card-sub">Default symbol <b>{html.escape(SP500_SYMBOL)}</b> · pick any supported ticker in the control panel · no SEC file storage required</div>
   </div>
   <div class="mm-sources">{cards}</div>
   <div class="mm-legal">
@@ -1355,14 +1388,15 @@ _EMPTY_FRAME_COLUMNS = ["date", "Price", "SMA20", "SMA50"]
 async def analyze(ticker: str, horizon_days: int, chart_window: str):
     """Run Coordinator + DataAgent and fill the dashboard."""
     window = chart_window or "1Y"
+    symbol = resolve_market_symbol(ticker or SP500_SYMBOL)
     try:
         final, data = await asyncio.gather(
-            _coordinator.analyze(ticker, horizon_days=int(horizon_days)),
-            _data_agent.analyze(ticker),
+            _coordinator.analyze(symbol, horizon_days=int(horizon_days)),
+            _data_agent.analyze(symbol),
         )
         daily_frame = build_price_frame(data)
         try:
-            intraday_raw = _data_agent.market_data.get_intraday_ohlcv(ticker)
+            intraday_raw = _data_agent.market_data.get_intraday_ohlcv(symbol)
             intraday_frame = build_intraday_frame(intraday_raw)
         except Exception:
             # Daily chart still works if intraday is unavailable (weekends, etc.).
@@ -1447,8 +1481,7 @@ theme = gr.themes.Base(
 )
 
 
-with gr.Blocks(title="MarketMind · S&P 500 multi-agent terminal") as demo:
-    ticker_state = gr.State(SP500_SYMBOL)
+with gr.Blocks(title="MarketMind · multi-agent terminal") as demo:
     price_frame_state = gr.State(None)
 
     header_out = gr.HTML(value=_header_html())
@@ -1457,6 +1490,19 @@ with gr.Blocks(title="MarketMind · S&P 500 multi-agent terminal") as demo:
         with gr.Column(scale=8, elem_classes=["mm-card"]):
             quote_out = gr.HTML(value=_idle_quote())
         with gr.Column(scale=4, min_width=300, elem_classes=["mm-card", "mm-controls"]):
+            gr.HTML(
+                '<div class="mm-ctl-label"><span class="mm-kicker">Ticker</span>'
+                '<span class="mm-ctl-hint">preset or type your own</span></div>'
+            )
+            ticker_input = gr.Dropdown(
+                choices=UI_TICKER_CHOICES,
+                value=SP500_SYMBOL,
+                allow_custom_value=True,
+                filterable=True,
+                show_label=False,
+                container=False,
+                elem_classes=["mm-ticker-select"],
+            )
             gr.HTML(
                 '<div class="mm-ctl-label"><span class="mm-kicker">Prediction horizon</span>'
                 '<span class="mm-ctl-hint">trading days</span></div>'
@@ -1519,7 +1565,7 @@ with gr.Blocks(title="MarketMind · S&P 500 multi-agent terminal") as demo:
         queue=False,
     ).then(
         fn=analyze,
-        inputs=[ticker_state, horizon_input, chart_window],
+        inputs=[ticker_input, horizon_input, chart_window],
         outputs=[
             header_out,
             quote_out,

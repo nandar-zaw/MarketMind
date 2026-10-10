@@ -9,6 +9,7 @@ import pytest
 from app.models.schemas import CompanyInfo, DataAgentResult, MarketPrice
 from app.services.market_data import MarketDataService
 from app.ui import (
+    UI_TICKER_CHOICES,
     build_intraday_frame,
     build_price_frame,
     plot_price_history,
@@ -52,6 +53,14 @@ def _sample_intraday_raw(n: int = 60) -> pd.DataFrame:
         },
         index=index,
     )
+
+
+def test_ui_ticker_choices_include_common_symbols():
+    assert "SPY" in UI_TICKER_CHOICES
+    assert "QQQ" in UI_TICKER_CHOICES
+    assert "NVDA" in UI_TICKER_CHOICES
+    assert "TSLA" in UI_TICKER_CHOICES
+    assert "AAPL" in UI_TICKER_CHOICES
 
 
 def test_build_price_frame_includes_sma_columns():

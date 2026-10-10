@@ -136,8 +136,8 @@ python -m app.ui
 Then open the URL printed in the terminal (usually
 [http://127.0.0.1:7860](http://127.0.0.1:7860)).
 
-Click **Analyze** on `SPY` to run the full multi-agent pipeline and explore
-chart windows without re-running analysis.
+Pick a ticker (default `SPY`, or QQQ / NVDA / TSLA / AAPL / … — or type your
+own), click **Analyze**, and explore chart windows without re-running analysis.
 
 ### Option B — FastAPI API
 
