@@ -141,6 +141,12 @@ Then open the URL printed in the terminal (usually
 Pick a ticker (default `SPY`, or QQQ / NVDA / TSLA / AAPL / … — or type your
 own), click **Analyze**, and explore chart windows without re-running analysis.
 
+Optional alternate UI (same layout, **Matplotlib charts, no Plotly**):
+
+```bash
+python -m app.ui_matplotlib
+```
+
 ### Option B — FastAPI API
 
 ```bash
