@@ -81,7 +81,8 @@ MarketMind/
 ├── .env.example
 ├── app/
 │   ├── main.py          # FastAPI entry
-│   ├── ui.py            # Gradio dashboard
+│   ├── ui.py            # Gradio dashboard (Plotly charts)
+│   ├── ui_gradio_only.py  # Gradio dashboard (SVG charts, no Plotly)
 │   ├── models/
 │   ├── agents/
 │   ├── services/
@@ -127,12 +128,22 @@ On Windows, if `python` is not on PATH, use `py -3.12` instead.
 
 ## How to Run
 
-### Option A — Gradio dashboard (recommended)
+### Option A — Gradio dashboards (two UIs)
 
-From the repo root, with the venv active:
+Both UIs share the same layout, agents, ticker selector, and Analyze flow.
+Only the **chart drawing** differs. Use either one — pick what you want to demo.
+
+| UI | Command | Chart |
+| --- | --- | --- |
+| **Main (Plotly)** | `python -m app.ui` | Interactive Plotly chart |
+| **Gradio-only** | `python -m app.ui_gradio_only` | Plain SVG in Gradio HTML (no Plotly) |
 
 ```bash
+# Main UI — Plotly charts
 python -m app.ui
+
+# Alternate UI — Gradio-only SVG charts (no Plotly chart library)
+python -m app.ui_gradio_only
 ```
 
 Then open the URL printed in the terminal (usually
@@ -141,15 +152,10 @@ Then open the URL printed in the terminal (usually
 Pick a ticker (default `SPY`, or QQQ / NVDA / TSLA / AAPL / … — or type your
 own), click **Analyze**, and explore chart windows without re-running analysis.
 
-Optional alternate UIs (same layout; `app/ui.py` left unchanged):
+Files:
 
-```bash
-# Gradio only — SVG chart (no Plotly, no Matplotlib)
-python -m app.ui_gradio_only
-
-# Matplotlib charts (no Plotly)
-python -m app.ui_matplotlib
-```
+- `app/ui.py` — main dashboard (Plotly)
+- `app/ui_gradio_only.py` — same dashboard with SVG charts only
 
 ### Option B — FastAPI API
 
