@@ -1,6 +1,6 @@
-# 07 — Code Map (where to look during code review)
+# 07 — Code Map (paths inside this submission folder)
 
-Paths are relative to the repository root.
+All paths are relative to **`submission/`** (this package root).
 
 ## Entry points
 

@@ -95,7 +95,7 @@ MarketMind/
 
 See also:
 
-- [submission/README.md](submission/README.md) — **professor submission package**
+- [submission/README.md](submission/README.md) — **professor package (full runnable source + guides)**
 - [docs/README.md](docs/README.md) — docs index
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/AGENTS.md](docs/AGENTS.md)

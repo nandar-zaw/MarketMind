@@ -1,10 +1,11 @@
-# 02 — How to Run (for the professor)
+# 02 — How to Run
+
+This guide assumes your working directory is **this `submission` folder**
+(the one that contains `app/`, `tests/`, and `requirements.txt`).
 
 Requirements: **Python 3.12+**, internet access for Yahoo Finance (yfinance).
 
 ## 1. Setup (once)
-
-From the **repository root** (parent of `submission/`):
 
 ```bash
 python -m venv .venv
@@ -22,6 +23,8 @@ On Windows, if `python` is missing: `py -3.12 -m venv .venv`.
 
 Optional: copy `.env.example` → `.env` and set `OPENAI_API_KEY` for LLM sentiment.
 Without a key, Sentiment still runs with a **keyword fallback**.
+
+Do **not** commit a real `.env` (secrets). None is shipped in this package.
 
 ## 2. Gradio UI (recommended demo)
 
@@ -71,6 +74,7 @@ pytest
 
 | Issue | Fix |
 | --- | --- |
+| Module not found | Activate `.venv` and `pip install -r requirements.txt` from **this** folder |
 | Empty chart / no prices | Check internet; Yahoo may rate-limit — retry |
 | Sentiment “Keyword” chip | Set `OPENAI_API_KEY` in `.env` and restart UI |
 | Port busy | Gradio may open 7861+; use the URL in the terminal |

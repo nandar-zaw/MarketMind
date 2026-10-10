@@ -73,6 +73,11 @@ Hard fails stop the run (API 400). Soft policies rewrite and continue.
 **Done:** Phases 1–6 agents + guardrails, Phase 9 dual Gradio dashboards, FastAPI analyze.  
 **Later:** Phase 7 ML model, Phase 8 backtesting.
 
+## How to run this package
+
+This `submission/` folder is **self-contained**. See [`02_HOW_TO_RUN.md`](02_HOW_TO_RUN.md)
+and the cover [`README.md`](README.md).
+
 ## Key code entry points
 
 See [`07_CODE_MAP.md`](07_CODE_MAP.md).
