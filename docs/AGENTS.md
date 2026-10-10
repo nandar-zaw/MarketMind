@@ -2,18 +2,18 @@
 
 This document describes each agent in beginner-friendly language.
 
-Phase 1 only defines placeholder classes for some agents.
-The **Data Collector Agent**, **Technical Analysis Agent**, and **Sentiment
-Analysis Agent** are implemented. Risk and Coordinator already run a demo.
+**Status:** All six agents below are implemented and wired through the
+Coordinator. Technical, Sentiment, and Fundamental run **in parallel** after
+DataAgent; Risk runs next; the Coordinator produces the final BUY / HOLD / SELL.
 
 ---
 
 ## 1. Data Collector Agent
 
-**Status:** Implemented (market data + company info + recent news)
+**Status:** Implemented (prices + company info + fundamentals + news)
 
 **Input:**
-- Market symbol focused on the S&P 500 (for example `SPY`; aliases like `^GSPC` resolve to `SPY`)
+- Market symbol (default focus `SPY`; aliases like `^GSPC` / `SP` resolve to `SPY`)
 - Optional `start` / `end` dates (`YYYY-MM-DD`)
 - Optional `period` (default approximately one year: `1y`)
 - Optional `as_of_date` to block future price observations (for later backtesting)
@@ -42,8 +42,8 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 **Who consumes this data:**
 - **Technical Agent** → `price_history` (OHLCV)
 - **Sentiment Agent** → `news` headlines
+- **Fundamental Agent** → `fundamentals` from DataAgent (direct API)
 - **Risk Agent / Coordinator** → same OHLCV (Coordinator loads DataAgent once, then shares it)
-- **Fundamental Agent** → should use `fundamentals` from DataAgent (direct API). SEC file-storage RAG is optional/legacy for single-stock demos, not required for S&P 500 (`SPY`).
 
 ---
 
@@ -84,21 +84,24 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 - Does **not** download news itself
 
 **Analysis:**
-- An LLM scores sentiment using ONLY the supplied headlines, which are numbered in the prompt; every evidence bullet cites its headline (for example `[1]`)
+- If `OPENAI_API_KEY` is set: an LLM scores sentiment using ONLY the supplied
+  headlines (numbered in the prompt; evidence cites `[1]`, `[2]`, …)
+- If no API key: a **keyword fallback** scores the same headlines so the demo
+  still works offline
 - Headlines are treated as untrusted data, never as instructions
-- Model output is parsed deterministically (`SCORE` / `EVIDENCE` / `VERDICT`); score ≥ +0.33 → `bullish`, ≤ −0.33 → `bearish`, otherwise `neutral`
-- Too little coverage, a failed data pull, or missing configuration returns `unavailable` (this agent does not vote) instead of raising an error
+- Too little coverage or a failed data pull returns `unavailable` (this agent
+  does not vote) instead of raising an error
 
 **Output:**
 - Sentiment signal: `bullish` | `neutral` | `bearish` (never BUY/HOLD/SELL)
-- Confidence score (0.0 – 1.0, the absolute parsed score)
+- Confidence score (0.0 – 1.0)
 - Short explanation built from the cited headlines
 
 ---
 
 ## 4. Fundamental Analysis Agent
 
-**Status:** Implemented for the S&P 500 path (DataAgent API snapshot)
+**Status:** Implemented (DataAgent API snapshot)
 
 **Input:**
 - `DataAgentResult.fundamentals` from DataAgent (yfinance direct API)
@@ -117,11 +120,11 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 
 ## 5. Risk Manager Agent
 
-**Status:** implemented for the classroom demo.
+**Status:** Implemented
 
 **Input:**
-- Price history (Close) from the market-data tool
-- Optional signals from other agents (event pressure)
+- Price history (Close) from the Coordinator / DataAgent
+- Optional signals from other agents (event pressure from bearish Sentiment / Fundamental)
 
 **Analysis:**
 - Annualized volatility
@@ -135,23 +138,27 @@ Analysis Agent** are implemented. Risk and Coordinator already run a demo.
 - Short explanation
 
 This agent does **not** output BUY/SELL. It is a safety overlay for the Coordinator.
+It runs **after** Technical, Sentiment, and Fundamental finish.
 
 ---
 
 ## 6. Coordinator Agent
 
-**Status:** implemented for the classroom demo, with guardrails.
+**Status:** Implemented, with guardrails
 
 **Input:**
 - User ticker (checked by an **input guardrail**)
-- Price history from `get_price_history` (checked by a **tool guardrail**)
+- Market data from DataAgent (checked by **tool** / **tool-output** guardrails)
 - Results from Technical, Sentiment, Fundamental, and Risk agents
 
 **Analysis:**
-- Run specialist agents; unimplemented ones are `unavailable` and do not vote
-- Ask Risk Manager to review
-- Blend live votes; if Technical is still missing, use a labeled 5-day return context
-- **Output guardrail:** HIGH risk cannot remain a BUY
+1. Load DataAgent **once**
+2. Run Technical / Sentiment / Fundamental **in parallel** on that shared result
+3. Run Risk Manager next
+4. Blend live votes (+ short-horizon price context) into BUY / HOLD / SELL
+5. **Decision output guardrail:** HIGH risk cannot remain a BUY
+
+Failed specialists become `unavailable` and do not vote; the pipeline can still finish.
 
 **Output:**
 - Final recommendation: **BUY**, **HOLD**, or **SELL**
@@ -160,4 +167,12 @@ This agent does **not** output BUY/SELL. It is a safety overlay for the Coordina
 - Supporting evidence from each agent
 - Guardrail event log (input / tool / output)
 
-**Prediction horizon:** 5 trading days
+**Prediction horizon:** default 5 trading days (UI also offers 3 / 10)
+
+---
+
+## Related docs
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — system diagrams
+- [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md) — class talk track
+- [`DATA_AGENT.md`](DATA_AGENT.md) · [`TECHNICAL_AGENT.md`](TECHNICAL_AGENT.md)

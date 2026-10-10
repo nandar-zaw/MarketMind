@@ -93,8 +93,10 @@ MarketMind/
 
 See also:
 
+- [docs/README.md](docs/README.md) — docs index
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/AGENTS.md](docs/AGENTS.md)
+- [docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md](docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ---
@@ -195,7 +197,7 @@ pytest
 3. News + Sentiment Agent (done)
 4. Fundamental Agent (done)
 5. Risk Agent (done)
-6. Coordinator Agent (done)
+6. Coordinator Agent (done; specialists run in parallel)
 7. Simple ML prediction model
 8. Simple backtesting
 9. Dashboard (Gradio done)

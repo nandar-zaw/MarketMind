@@ -53,7 +53,7 @@ flowchart TB
         News["News headlines"]
     end
 
-    subgraph Specialists["Specialist voters"]
+    subgraph Specialists["Specialist voters (parallel)"]
         Tech["Technical Agent<br/>RSI · SMA · MACD · trend"]
         Sent["Sentiment Agent<br/>news mood"]
         Fund["Fundamental Agent<br/>valuation · growth · quality"]

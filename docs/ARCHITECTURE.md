@@ -2,36 +2,53 @@
 
 MarketMind uses a simple multi-agent design that is easy to explain in class.
 
+**Status:** Working end-to-end (DataAgent → parallel specialists → Risk →
+Coordinator decision + guardrails). UI: Gradio; API: FastAPI.
+
+For slide talking points, see also
+[`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md).
+
+---
+
 ## High-Level Diagram (ASCII)
 
 ```text
                 User
                   |
                   v
-               FastAPI
+         FastAPI / Gradio UI
                   |
                   v
            Coordinator Agent
                   |
-    +-------------+-------------+
-    |             |             |
-    v             v             v
-Technical     Sentiment    Fundamental
- Agent          Agent         Agent
-    |             |             |
-    +-------------+-------------+
+                  v
+             DataAgent (once)
+          prices / news / fundamentals
+                  |
+     +------------+------------+
+     |            |            |     ← parallel
+     v            v            v
+ Technical   Sentiment   Fundamental
+     |            |            |
+     +------------+------------+
                   |
                   v
               Risk Agent
                   |
                   v
+     Coordinator blends votes
+                  |
+                  v
+         Output guardrail
+                  |
+                  v
          Final Recommendation
+            BUY / HOLD / SELL
 ```
 
-## Big-Picture Architecture (for class)
+---
 
-A fuller view including **DataAgent**, **guardrails**, and data supply. For slides and
-talking points, see also `docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md`.
+## Big-Picture Architecture (for class)
 
 ```mermaid
 flowchart TB
@@ -54,7 +71,7 @@ flowchart TB
         Data["Data Collector Agent"]
     end
 
-    subgraph Specialists["Specialist voters"]
+    subgraph Specialists["Specialist voters (parallel)"]
         Tech["Technical Agent"]
         Sent["Sentiment Agent"]
         Fund["Fundamental Agent"]
@@ -83,7 +100,7 @@ User --> UI --> Input guardrail --> Coordinator
                  +--------------------+--------------------+
                  v                    v                    v
             Technical            Sentiment            Fundamental
-                 |                    |                    |
+                 |                    |                    |  (parallel)
                  +--------------------+--------------------+
                                       v
                                  Risk Agent
@@ -93,15 +110,14 @@ User --> UI --> Input guardrail --> Coordinator
                          Output guardrail --> BUY/HOLD/SELL
 ```
 
-## Architecture (classroom-simple)
+---
 
-This Mermaid diagram shows the same flow more clearly, including how the
-**DataAgent** supplies data to the analysis agents:
+## Classroom Mermaid (control + data supply)
 
 ```mermaid
 flowchart TD
-    User --> FastAPI
-    FastAPI --> Coordinator
+    User --> UI[FastAPI / Gradio]
+    UI --> Coordinator
     Coordinator --> DataAgent
     Coordinator --> TechnicalAgent
     Coordinator --> SentimentAgent
@@ -109,17 +125,24 @@ flowchart TD
     DataAgent -.->|supplies data| TechnicalAgent
     DataAgent -.->|supplies data| SentimentAgent
     DataAgent -.->|supplies data| FundamentalAgent
-    TechnicalAgent --> RiskAgent
-    SentimentAgent --> RiskAgent
-    FundamentalAgent --> RiskAgent
-    RiskAgent --> FinalRec[Final Recommendation]
+    TechnicalAgent --> Coordinator
+    SentimentAgent --> Coordinator
+    FundamentalAgent --> Coordinator
+    Coordinator --> RiskAgent
+    RiskAgent --> Coordinator
+    Coordinator --> FinalRec[Final Recommendation]
 ```
 
 **How to read it:**
 
-- Solid arrows = main control flow (User → FastAPI → Coordinator → agents → Risk → final recommendation)
-- Dashed arrows labeled "supplies data" = DataAgent feeds price/company data into Technical, Sentiment, and Fundamental agents
-- RiskAgent reviews the specialized agent outputs before the final recommendation
+- Solid arrows = control flow under the Coordinator
+- Dashed arrows = DataAgent supplies shared market data
+- Technical / Sentiment / Fundamental run **in parallel** after DataAgent
+- Risk runs **after** those three finish
+- The **Coordinator** (not Risk alone) produces BUY / HOLD / SELL; the
+  decision output guardrail may adjust it (e.g. HIGH risk blocks BUY)
+
+---
 
 ## Data Agent Role
 
@@ -128,35 +151,57 @@ The **Data Collector Agent** is the shared market-data source for the pipeline.
 The Coordinator loads DataAgent **once** per request, then shares the result:
 
 - historical OHLCV prices → Technical Agent + Risk Agent
-- recent news headlines → Sentiment Agent
+- recent news headlines → Sentiment Agent (Yahoo Finance via yfinance)
 - basic company / fund metadata → `DataAgentResult.company_info`
-- fundamental metrics (yfinance API) → `DataAgentResult.fundamentals` for the Fundamental Agent
+- fundamental metrics (yfinance `.info`) → `DataAgentResult.fundamentals`
+  for the Fundamental Agent
 
-DataAgent does **not** use SEC file storage. File-storage RAG on the Fundamental
-Agent is optional/legacy for single-stock demos; the S&P 500 path should read
-fundamentals from DataAgent.
+DataAgent does **not** use SEC file storage. Optional vector-store RAG is
+legacy for single-stock experiments; the default path reads fundamentals
+from DataAgent.
 
-## Request Flow (Future)
+---
 
-1. The user sends a market symbol to FastAPI (for example `SPY` for the S&P 500).
-2. FastAPI calls the **Coordinator Agent**.
-3. The Coordinator asks specialized agents for their signals.
-4. The **Risk Agent** reviews risk before the final decision.
-5. MarketMind returns a structured recommendation:
+## Request Flow (current)
+
+1. User picks a ticker (default `SPY`) in Gradio, or calls
+   `GET`/`POST /analyze/{ticker}` on FastAPI.
+2. **Input guardrail** validates ticker + horizon.
+3. Coordinator asks **DataAgent** once (tool guardrails around the fetch).
+4. **Technical, Sentiment, and Fundamental** run **in parallel** on that
+   shared data.
+5. **Risk Agent** scores LOW / MEDIUM / HIGH from prices (+ optional
+   bearish flags from Sentiment / Fundamental).
+6. Coordinator blends votes into a draft BUY / HOLD / SELL.
+7. **Decision output guardrail** validates (and may rewrite) the answer.
+8. MarketMind returns a structured recommendation:
 
    - BUY / HOLD / SELL
    - confidence score
    - short explanation
    - supporting evidence from each agent
 
+**Prediction horizon:** typically 5 trading days (UI also offers 3 / 10).
+
+---
+
 ## Why This Architecture?
 
 - Each agent has one clear job (specialization).
-- The Coordinator combines results (coordination).
+- The Coordinator combines results (orchestration).
+- Specialists fan out in parallel on shared data (efficiency + clear votes).
 - Outputs are structured with Pydantic models (explainability).
-- The design stays small enough for a classroom presentation.
+- Guardrails wrap input, tools, and outputs (classroom safety pattern).
+- The design stays small enough for a course presentation.
 
-## Phase 1 Note
+---
 
-Phase 1 only creates the project structure and placeholder classes.
-No real analysis or agent coordination runs yet.
+## Related docs
+
+| Doc | Purpose |
+| --- | --- |
+| [`AGENTS.md`](AGENTS.md) | Per-agent roles and I/O |
+| [`DATA_AGENT.md`](DATA_AGENT.md) | DataCollector deep dive |
+| [`TECHNICAL_AGENT.md`](TECHNICAL_AGENT.md) | Technical indicators |
+| [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md) | Presentation script |
+| [`ROADMAP.md`](ROADMAP.md) | Phase checklist |
