@@ -70,8 +70,9 @@ Simple backtesting
 
 Dashboard
 
-- Gradio UI with Plotly charts, ticker selector, horizon control
-- FastAPI `/analyze/{ticker}` remains available
+- Gradio UI with Plotly charts (`python -m app.ui`)
+- Alternate Gradio-only SVG UI (`python -m app.ui_gradio_only`)
+- Ticker selector, horizon control, FastAPI `/analyze/{ticker}`
 
 ---
 
@@ -80,3 +81,4 @@ Dashboard
 Final testing and presentation
 
 - See [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md)
+- Professor hand-in package: [`../submission/`](../submission/)

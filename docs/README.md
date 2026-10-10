@@ -12,3 +12,5 @@ Quick index for course demos and the final presentation.
 | [`ROADMAP.md`](ROADMAP.md) | Phase checklist |
 
 How to run the app: see the root [`README.md`](../README.md).
+
+Professor hand-in package: [`../submission/`](../submission/).

@@ -89,11 +89,13 @@ MarketMind/
 │   ├── ml/
 │   └── utils/
 ├── tests/
-└── docs/
+├── docs/
+└── submission/          # professor hand-in package
 ```
 
 See also:
 
+- [submission/README.md](submission/README.md) — **professor submission package**
 - [docs/README.md](docs/README.md) — docs index
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/AGENTS.md](docs/AGENTS.md)
@@ -216,7 +218,7 @@ pytest
 6. Coordinator Agent (done; specialists run in parallel)
 7. Simple ML prediction model
 8. Simple backtesting
-9. Dashboard (Gradio done)
-10. Final testing and presentation
+9. Dashboard (Gradio done — Plotly + SVG UIs)
+10. Final testing and presentation ([submission/](submission/))
 
 Full details: [docs/ROADMAP.md](docs/ROADMAP.md)
