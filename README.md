@@ -2,6 +2,14 @@
 
 MarketMind is a small multi-agent system that looks at a stock from a few different angles and then argues its way to a single recommendation: BUY, HOLD, or SELL, with a confidence score and the reasoning shown. It was built as a course project for CS529 AI Engineering at Maharishi International University. It is a demo, not financial advice, and nobody should trade on it.
 
+## Team
+
+A three-person project. Roughly:
+
+- **Helena Pedro**: Fundamental Agent, Sentiment Agent, Gradio dashboard
+- **Nandar Zaw**: Coordinator, Risk Manager, guardrails
+- **Nur**: Data Agent and its services, Technical Agent
+
 ## What happens when you analyze a ticker
 
 You pick a ticker (or type any symbol) and a horizon of 3, 5, or 10 trading days. Three specialists then vote, and the Risk Manager assesses how dangerous the setup is:
@@ -128,14 +136,6 @@ app/
 docs/            agent notes, original architecture doc, roadmap
 tests/           pytest suite
 ```
-
-## Team
-
-A three-person project. Roughly:
-
-- **Helena Pedro**: Fundamental Agent, Sentiment Agent, Gradio dashboard
-- **Nandar Zaw**: Coordinator, Risk Manager, guardrails
-- **Nur**: Data Agent and its services, Technical Agent
 
 ## Known limits
 
