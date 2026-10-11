@@ -1,0 +1,1 @@
+"""MarketMind application package."""

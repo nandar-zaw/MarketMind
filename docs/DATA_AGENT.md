@@ -4,19 +4,22 @@ This document explains the **Data Collector Agent** of MarketMind: what it does,
 how it is wired, and how to use it. It is written to be easy to explain in class.
 
 The DataAgent **gathers and prepares market data**. It does **not** calculate
-indicators, run sentiment/fundamentals, score risk, or make BUY/HOLD/SELL
-decisions. Those belong to later agents and phases.
+indicators, score sentiment, score fundamentals, score risk, or make
+BUY/HOLD/SELL decisions. Those belong to the specialist agents and the
+Coordinator.
 
 ---
 
 ## 1. Purpose
 
-Given a stock ticker such as `AAPL`, the DataAgent:
+Given a market symbol such as `SPY` (S&P 500 ETF proxy), the DataAgent:
 
 - downloads historical OHLCV prices (Open, High, Low, Close, Volume)
-- collects basic company information (name, sector, industry, exchange, currency, market cap)
+- collects basic company / fund information
+- collects **fundamental metrics** (`FundamentalSnapshot` via yfinance `.info`)
+- fetches recent **news headlines** (`NewsDataService` / yfinance)
 - validates and cleans the data
-- returns it as structured Pydantic models for the other agents
+- returns structured Pydantic models for the other agents
 
 Default lookback is approximately **one year**.
 
@@ -30,19 +33,19 @@ User / Coordinator
         v
    DataAgent (async analyze)
         |
-        v
- MarketDataService  (synchronous)
+        +--> MarketDataService  --> yfinance  (prices, info, fundamentals)
         |
-        v
-     yfinance
+        +--> NewsDataService    --> yfinance  (headlines)
 ```
 
 Why this shape:
 
 - **DataAgent** owns the "collect data and return a structured result" job.
-- **MarketDataService** isolates all external provider calls, so yfinance can be
-  replaced later without touching the agent.
+- **MarketDataService** / **NewsDataService** isolate external provider calls,
+  so yfinance can be replaced later without touching the agent.
 - This keeps the agent small and the provider swappable.
+- The Coordinator loads DataAgent **once**, then shares the result with
+  Technical, Sentiment, and Fundamental (in parallel).
 
 ---
 
@@ -51,8 +54,9 @@ Why this shape:
 | File | Responsibility |
 | --- | --- |
 | `app/agents/data_agent.py` | `DataAgent` — the agent entry point (`analyze`) |
-| `app/services/market_data.py` | `MarketDataService` — talks to yfinance |
-| `app/models/schemas.py` | `MarketPrice`, `CompanyInfo`, `DataAgentResult` |
+| `app/services/market_data.py` | `MarketDataService` — prices + Yahoo `.info` |
+| `app/services/news_data.py` | `NewsDataService` — headlines via yfinance |
+| `app/models/schemas.py` | `MarketPrice`, `CompanyInfo`, `FundamentalSnapshot`, `NewsItem`, `DataAgentResult` |
 | `app/utils/exceptions.py` | `MarketDataError` |
 | `app/utils/helpers.py` | `normalize_ticker` (uppercase + trim) |
 | `tests/test_data_agent.py` | Mocked unit tests (no network needed) |
@@ -70,9 +74,23 @@ One daily OHLCV observation.
 
 ### CompanyInfo
 
-Basic company metadata. Missing fields are `None` instead of crashing.
+Basic company / fund metadata. Missing fields are `None` instead of crashing.
 
 - `ticker`, `company_name`, `sector`, `industry`, `exchange`, `currency`, `market_cap`
+
+### FundamentalSnapshot
+
+Fundamental metrics from a **direct yfinance API call** (not SEC file storage).
+
+Typical fields:
+
+- Valuation: `trailing_pe`, `forward_pe`, `price_to_book`, `price_to_sales`, `dividend_yield`
+- Quality / growth: `profit_margins`, `operating_margins`, `revenue_growth`, `earnings_growth`, `return_on_equity`
+- Balance sheet: `debt_to_equity`, `total_cash`, `total_debt`
+- Market: `beta`, `fifty_two_week_high`, `fifty_two_week_low`
+- ETF-friendly: `quote_type`, `total_assets`, `ytd_return`, `three_year_avg_return`
+
+For `SPY`, company income-statement fields are often `None`; ETF fields are filled when Yahoo provides them.
 
 ### DataAgentResult
 
@@ -80,7 +98,9 @@ The DataAgent output.
 
 - `ticker`
 - `company_info`
+- `fundamentals` (`FundamentalSnapshot` from the market API)
 - `price_history` (oldest to newest)
+- `news`
 - `start_date`, `end_date`
 - `records_count`
 
@@ -93,15 +113,21 @@ import asyncio
 
 from app.agents.data_agent import DataAgent
 
-result = asyncio.run(DataAgent().analyze("aapl"))
+result = asyncio.run(DataAgent().analyze("SPY"))
 
-print(result.ticker)              # AAPL
+print(result.ticker)              # SPY
 print(result.company_info.company_name)
-print(result.company_info.sector)
+print(result.fundamentals.trailing_pe)
+print(result.fundamentals.quote_type)  # often ETF
 print(result.records_count)       # number of OHLCV rows
 print(result.price_history[0])    # first (oldest) bar
 print(result.price_history[-1])   # last (newest) bar
+print(len(result.news))           # recent headlines for Sentiment
 ```
+
+> Fundamental Agent teammates should read `result.fundamentals` instead of
+> OpenAI file-storage / SEC RAG for the S&P 500 path.
+
 
 ### Arguments
 

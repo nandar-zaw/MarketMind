@@ -1,0 +1,148 @@
+"""
+Pydantic schemas for MarketMind requests and responses.
+
+These models define the structured data shapes used across agents.
+"""
+
+from datetime import date
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class AnalysisRequest(BaseModel):
+    """Request to analyze a stock ticker."""
+
+    ticker: str = Field(
+        ...,
+        description="Market ticker symbol; MarketMind focuses on SPY (S&P 500)",
+    )
+    horizon_days: int = Field(
+        default=5,
+        description="Prediction horizon in trading days",
+    )
+
+
+class AgentResult(BaseModel):
+    """Structured output from a single specialized agent."""
+
+    agent_name: str
+    signal: str
+    confidence: float
+    explanation: str
+
+
+class GuardrailEvent(BaseModel):
+    """Record of an input, tool, or output guardrail check."""
+
+    kind: str = Field(..., description="input, tool, or output")
+    name: str
+    passed: bool
+    detail: str
+
+
+class FinalRecommendation(BaseModel):
+    """Final coordinated recommendation for a ticker."""
+
+    ticker: str
+    recommendation: str
+    confidence: float
+    explanation: str
+    horizon_days: int = 5
+    agent_results: list[AgentResult]
+    guardrails: list[GuardrailEvent] = Field(default_factory=list)
+
+
+class MarketPrice(BaseModel):
+    """One daily OHLCV observation for a ticker."""
+
+    date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    adj_close: Optional[float] = None
+
+
+class CompanyInfo(BaseModel):
+    """Basic company metadata from the market data provider."""
+
+    ticker: str
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    exchange: Optional[str] = None
+    currency: Optional[str] = None
+    market_cap: Optional[float] = None
+
+
+class FundamentalSnapshot(BaseModel):
+    """
+    Fundamental metrics from a direct market-data API (yfinance).
+
+    Used by the Fundamental Agent later instead of SEC file-storage RAG.
+    Fields that the provider does not return stay None (common for ETFs
+    like SPY, where company income-statement fields do not apply).
+    """
+
+    ticker: str
+    quote_type: Optional[str] = None  # e.g. ETF, EQUITY
+    trailing_pe: Optional[float] = None
+    forward_pe: Optional[float] = None
+    price_to_book: Optional[float] = None
+    price_to_sales: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    profit_margins: Optional[float] = None
+    operating_margins: Optional[float] = None
+    revenue_growth: Optional[float] = None
+    earnings_growth: Optional[float] = None
+    return_on_equity: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    total_cash: Optional[float] = None
+    total_debt: Optional[float] = None
+    beta: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    # ETF / index-friendly extras (often filled for SPY)
+    total_assets: Optional[float] = None
+    ytd_return: Optional[float] = None
+    three_year_avg_return: Optional[float] = None
+
+
+class NewsItem(BaseModel):
+    """One recent news headline about a ticker."""
+
+    title: str
+    publisher: str = "Unknown source"
+    published: Optional[str] = None  # ISO date (YYYY-MM-DD) when known
+    summary: str = ""
+
+
+class DataAgentResult(BaseModel):
+    """Structured output from the Data Collector Agent."""
+
+    ticker: str
+    company_info: CompanyInfo
+    price_history: list[MarketPrice]
+    news: list[NewsItem] = Field(default_factory=list)
+    fundamentals: Optional[FundamentalSnapshot] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    records_count: int
+
+
+class TechnicalAnalysisResult(BaseModel):
+    """Detailed technical analysis from the Technical Agent."""
+
+    signal: str  # bullish | neutral | bearish
+    confidence: float  # 0.0 – 1.0
+    rsi: float
+    sma20: float
+    sma50: float
+    macd: float
+    macd_signal: float
+    price_change_5d: float  # fraction, e.g. 0.012 = +1.2%
+    volume_trend: str  # above_average | normal | below_average | unavailable
+    explanation: str
+    score: int  # sum of indicator votes for transparency

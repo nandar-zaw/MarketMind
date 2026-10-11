@@ -26,6 +26,8 @@ from app.models.schemas import (
     FinalRecommendation,
     GuardrailEvent,
 )
+from app.utils.helpers import normalize_ticker
+from app.utils.symbols import SP500_SYMBOL
 
 TICKER_PATTERN = re.compile(r"^[A-Z]{1,5}$")
 MAX_EXPLANATION_CHARS = 1200
@@ -98,12 +100,13 @@ def input_guardrail(ticker: str, horizon_days: int = 5) -> tuple[str, list[Guard
             "Input looks like an injection or URL, not a stock ticker.",
         )
 
-    normalized = raw.upper()
+    # Resolve S&P 500 aliases (^GSPC, SPX, …) to SPY before format checks.
+    normalized = normalize_ticker(raw)
     if not TICKER_PATTERN.fullmatch(normalized):
         raise GuardrailTripwire(
             "input",
             "ticker_format",
-            "Ticker must be 1-5 letters only (example: AAPL).",
+            f"Ticker must be 1-5 letters only (example: {SP500_SYMBOL}).",
         )
 
     if not isinstance(horizon_days, int) or horizon_days < 1 or horizon_days > 21:

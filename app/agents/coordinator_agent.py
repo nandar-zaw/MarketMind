@@ -9,10 +9,14 @@ A specialist that fails or cannot run is marked ``unavailable`` and does
 not vote; one broken agent never sinks the whole decision. If the
 Technical agent is unavailable, the Coordinator falls back to a small,
 labeled short-horizon return vote so price action is still represented.
+
+Technical, Sentiment, and Fundamental run in parallel after DataAgent
+loads; Risk runs next, then the Coordinator blends the final decision.
 """
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 
 import pandas as pd
@@ -141,30 +145,32 @@ class CoordinatorAgent(BaseAgent):
     async def _collect_specialists(
         self, ticker: str, data: DataAgentResult
     ) -> list[AgentResult]:
-        results: list[AgentResult] = []
-        for name, agent in self.specialists.items():
+        """Run Technical / Sentiment / Fundamental in parallel on shared data."""
+
+        async def _run_one(name: str, agent: BaseAgent) -> AgentResult:
             try:
                 if _accepts_data(agent):
                     raw = await agent.analyze(ticker, data=data)
                 else:
                     raw = await agent.analyze(ticker)
-                results.append(specialist_output_guardrail(raw))
+                return specialist_output_guardrail(raw)
             except NotImplementedError:
-                results.append(
-                    _unavailable(
-                        name,
-                        f"{name} is not implemented yet, so it does not vote. "
-                        "Coordinator uses risk + short-horizon price context instead.",
-                    )
+                return _unavailable(
+                    name,
+                    f"{name} is not implemented yet, so it does not vote. "
+                    "Coordinator uses risk + short-horizon price context instead.",
                 )
             except Exception as exc:  # one failing specialist must not sink the decision
-                results.append(
-                    _unavailable(
-                        name,
-                        f"{name} failed ({type(exc).__name__}: {exc}), so it does not vote.",
-                    )
+                return _unavailable(
+                    name,
+                    f"{name} failed ({type(exc).__name__}: {exc}), so it does not vote.",
                 )
-        return results
+
+        return list(
+            await asyncio.gather(
+                *[_run_one(name, agent) for name, agent in self.specialists.items()]
+            )
+        )
 
 
 def _unavailable(name: str, explanation: str) -> AgentResult:
