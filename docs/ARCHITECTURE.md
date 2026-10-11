@@ -193,14 +193,13 @@ Analyze click triggers exactly one market-data pull.
 
 ---
 
-## User Interfaces
+## User Interface
 
 | UI | Command | Chart technology |
 | --- | --- | --- |
-| Mounted production UI (`app/ui.py`, served by `app/main.py` at `/`) | `python -m app.ui` or `uvicorn app.main:app` | Gradio native `gr.LinePlot` |
-| Gradio-only UI (`app/ui_gradio_only.py`) | `python -m app.ui_gradio_only` | Hand-built inline SVG via `gr.HTML` (no Plotly, no Matplotlib) |
+| Gradio dashboard (`app/ui.py`, also served by `app/main.py` at `/`) | `python -m app.ui` or `uvicorn app.main:app` | Hand-built inline SVG via `gr.HTML` (no external chart library) |
 
-Both consume the same agents and the same `DataAgentResult`.
+The dashboard and the API consume the same agents and the same `DataAgentResult`.
 
 ---
 

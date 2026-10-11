@@ -36,17 +36,15 @@ uvicorn app.main:app --reload
 - Health: http://127.0.0.1:8000/health  
 - API docs: http://127.0.0.1:8000/docs  
 
-## 3. Dashboard only (either UI)
+## 3. Dashboard only
 
 ```bash
-# Main UI (Gradio LinePlot charts)
 python -m app.ui
-
-# OR Gradio-only UI (hand-built SVG charts, no Plotly / Matplotlib)
-python -m app.ui_gradio_only
 ```
 
 Open the URL printed in the terminal (usually http://127.0.0.1:7860).
+The single dashboard draws its price chart as plain SVG in Gradio HTML, so
+it needs no external charting library (no Plotly, no Matplotlib).
 
 ## 4. Tests
 

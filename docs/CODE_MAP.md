@@ -7,8 +7,7 @@ Paths are relative to the **repository root**.
 | Path | Role |
 | --- | --- |
 | `app/main.py` | FastAPI: `/health`, `/analyze/{ticker}`, Gradio mounted at `/` |
-| `app/ui.py` | Gradio dashboard (Gradio native LinePlot chart) |
-| `app/ui_gradio_only.py` | Gradio dashboard (SVG chart, no chart library beyond Gradio) |
+| `app/ui.py` | Gradio dashboard (hand-built SVG chart; no external chart library) |
 
 ## Agents
 

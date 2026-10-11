@@ -29,8 +29,9 @@ from fastapi.responses import JSONResponse
 
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.guardrails import GuardrailTripwire
-from app.ui import _CSS, _THEME
+from app.ui import _CUSTOM_CSS as _UI_CSS
 from app.ui import demo as gradio_demo
+from app.ui import theme as _UI_THEME
 
 _APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 _DOCS_ENABLED = _APP_ENV not in {"production", "prod"}
@@ -151,5 +152,5 @@ async def analyze(
 # ignored when mounted); Gradio 5 reads them from the Blocks object.
 _mount_kwargs = {}
 if "theme" in inspect.signature(gr.mount_gradio_app).parameters:
-    _mount_kwargs = {"theme": _THEME, "css": _CSS}
+    _mount_kwargs = {"theme": _UI_THEME, "css": _UI_CSS}
 app = gr.mount_gradio_app(app, gradio_demo, path="/", **_mount_kwargs)

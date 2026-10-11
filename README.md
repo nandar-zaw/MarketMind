@@ -83,15 +83,13 @@ Then:
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 
-If you only want the dashboard (without uvicorn), either UI works on its own at http://127.0.0.1:7860:
+If you only want the dashboard (without uvicorn), run it on its own at http://127.0.0.1:7860:
 
 ```bash
-# Main UI (Gradio native LinePlot chart)
 python -m app.ui
-
-# OR Gradio-only UI (SVG chart, no chart library beyond Gradio)
-python -m app.ui_gradio_only
 ```
+
+The price chart is drawn as plain SVG inside Gradio, so the dashboard needs no external charting library (no Plotly, no Matplotlib).
 
 The API works without the UI too:
 
@@ -120,8 +118,7 @@ Production is a single Heroku web dyno. The `Procfile` starts the same FastAPI a
 ```text
 app/
   main.py        FastAPI app, mounts the dashboard at /
-  ui.py          Gradio dashboard (Gradio native LinePlot chart)
-  ui_gradio_only.py  Gradio dashboard (SVG chart, no chart library beyond Gradio)
+  ui.py          Gradio dashboard (hand-built SVG chart; no external chart library)
   agents/        Coordinator, Data, Technical, Sentiment, Fundamental, Risk
   services/      yfinance prices and news, SEC filings vector store search
   models/        request/response schemas (AgentResult, DataAgentResult, ...)

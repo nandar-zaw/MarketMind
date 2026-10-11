@@ -59,17 +59,14 @@ Run each command, then open the printed URL and click **Analyze** (the page
 opens as an idle shell; nothing hits the network until you click):
 
 ```bash
-# Mounted production UI (Gradio LinePlot charts)
+# Single Gradio dashboard (also mounted by the API at /)
 uvicorn app.main:app --reload      # dashboard at http://127.0.0.1:8000/
 python -m app.ui                   # or standalone at http://127.0.0.1:7860
-
-# Gradio-only UI (hand-built SVG charts, no Plotly / Matplotlib)
-python -m app.ui_gradio_only
 ```
 
-- [ ] Each UI returns a BUY / HOLD / SELL recommendation with a confidence score, per-agent panels, and a price chart.
-- [ ] Changing the chart window (3M / 6M / 1Y) re-filters instantly without a new analysis.
-- [ ] Default ticker is `AAPL`; `MSFT`, `NVDA`, `TSLA`, `AMZN` have SEC filings in the store.
+- [ ] The dashboard returns a BUY / HOLD / SELL recommendation with a confidence score, per-agent panels, and a price chart.
+- [ ] Changing the chart window (1D / 5D / 1M / 3M / 6M / 1Y) re-filters instantly without a new analysis.
+- [ ] Default ticker is `SPY`; `MSFT`, `NVDA`, `TSLA`, `AMZN` have SEC filings in the store.
 
 ## 6. Guardrails and API behave as documented
 
@@ -97,7 +94,7 @@ curl -X POST "http://127.0.0.1:8000/analyze/NVDA?horizon_days=10"
 3. Walk through: DataAgent → parallel Technical / Sentiment / Fundamental → Risk → Coordinator blend → output guardrail.
 4. Show the guardrail audit trail at the bottom of the final panel.
 5. Switch the ticker (e.g. `NVDA`) and the horizon, and re-run.
-6. Optionally show `python -m app.ui_gradio_only` as the "no chart library beyond Gradio" variant.
+6. Point out the chart is hand-built SVG inside Gradio — the project ships no external charting library.
 
 ## 8. Known limits (be upfront in the demo)
 

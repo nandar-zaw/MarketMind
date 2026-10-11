@@ -76,10 +76,10 @@ Simple backtesting
 
 Dashboard
 
-- Mounted Gradio UI (`app/ui.py` served by `app/main.py`) using Gradio's
-  native `gr.LinePlot` (`python -m app.ui` or `uvicorn app.main:app`)
-- Alternate Gradio-only SVG UI with no chart library beyond Gradio
-  (`python -m app.ui_gradio_only`)
+- Single Gradio UI (`app/ui.py`), also mounted by `app/main.py` at `/`
+  (`python -m app.ui` or `uvicorn app.main:app`)
+- Price chart drawn as hand-built SVG inside Gradio, with no external
+  charting library
 - Ticker selector, horizon control, FastAPI `/analyze/{ticker}`
 
 ---

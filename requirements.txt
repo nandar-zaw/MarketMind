@@ -13,4 +13,3 @@ openai==3.24.0
 openai-agents==0.23.1
 python-dotenv==1.2.4
 gradio==6.30.0
-plotly==7.1.0
