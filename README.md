@@ -83,7 +83,15 @@ Then:
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 
-If you only want the dashboard, `python -m app.ui` serves it on its own at http://127.0.0.1:7860.
+If you only want the dashboard (without uvicorn), either UI works on its own at http://127.0.0.1:7860:
+
+```bash
+# Main UI (Plotly charts)
+python -m app.ui
+
+# OR Gradio-only UI (SVG charts, no Plotly)
+python -m app.ui_gradio_only
+```
 
 The API works without the UI too:
 
@@ -112,7 +120,8 @@ Production is a single Heroku web dyno. The `Procfile` starts the same FastAPI a
 ```text
 app/
   main.py        FastAPI app, mounts the dashboard at /
-  ui.py          Gradio dashboard
+  ui.py          Gradio dashboard (Plotly charts)
+  ui_gradio_only.py  Gradio dashboard (SVG charts, no Plotly)
   agents/        Coordinator, Data, Technical, Sentiment, Fundamental, Risk
   services/      yfinance prices and news, SEC filings vector store search
   models/        request/response schemas (AgentResult, DataAgentResult, ...)
