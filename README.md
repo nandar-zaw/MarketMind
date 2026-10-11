@@ -71,21 +71,21 @@ pip install -r requirements.txt
 cp .env.example .env   # then open .env and fill it in, see below
 ```
 
-`.env` needs two values:
+`.env` really needs one value; the second is optional:
 
-- `OPENAI_API_KEY` for the Sentiment and Fundamental agents
-- `FUNDAMENTALS_VECTOR_STORE_ID` for the SEC filings store
+- `OPENAI_API_KEY` — **required** for the Sentiment and Fundamental agents (without it both report `unavailable`)
+- `FUNDAMENTALS_VECTOR_STORE_ID` — **optional**, only for the Fundamental Agent's SEC filing lookup. Leave it blank and everything else still runs; the Fundamental Agent just reports `unavailable`.
 
 Open the new `.env` in any editor and paste your values after the `=` signs (do not leave quotes or spaces around them):
 
 ```dotenv
 OPENAI_API_KEY=sk-proj-...your-key...
-FUNDAMENTALS_VECTOR_STORE_ID=vs_...your-store-id...
+FUNDAMENTALS_VECTOR_STORE_ID=vs_...your-store-id...   # optional
 ```
 
-Get the key from the OpenAI dashboard at http://platform.openai.com/api-keys (create one if you do not have it). `FUNDAMENTALS_VECTOR_STORE_ID` is the ID of a vector store that holds the SEC filing PDFs; you can see your stores under **Storage → Vector stores** in the same dashboard.
+Get the key from the OpenAI dashboard at http://platform.openai.com/api-keys (create one if you do not have it). If you want the Fundamental Agent to have filing evidence, set `FUNDAMENTALS_VECTOR_STORE_ID` to the ID of a vector store holding the SEC filing PDFs; you can see your stores under **Storage → Vector stores** in the same dashboard.
 
-Without these values the app still runs, but the two LLM agents (Sentiment and Fundamental) report `unavailable` and the pipeline continues with Technical + Risk.
+With no keys at all the app still runs: the two LLM agents report `unavailable` and the pipeline continues with Technical + Risk.
 
 Start everything (API plus dashboard) with:
 
@@ -129,7 +129,7 @@ The suite covers the agents, the data services, the guardrails, and the UI helpe
 
 ## Deployment
 
-The repo ships a `Procfile` (`web: uvicorn app.main:app ...`), so it can be run as a single web process on any host that supports it: the Gradio dashboard is mounted at `/`, so one process serves both the UI and the API. Set `OPENAI_API_KEY` and `FUNDAMENTALS_VECTOR_STORE_ID` as environment variables on that host (the same two values as `.env`).
+The repo ships a `Procfile` (`web: uvicorn app.main:app ...`), so it can be run as a single web process on any host that supports it: the Gradio dashboard is mounted at `/`, so one process serves both the UI and the API. Set `OPENAI_API_KEY` on that host (the same value as in `.env`); `FUNDAMENTALS_VECTOR_STORE_ID` is optional there too, only needed for the Fundamental Agent's filing lookup.
 
 There is no permanently hosted public demo; run it locally with the commands above, or deploy it yourself.
 
