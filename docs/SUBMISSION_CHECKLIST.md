@@ -61,7 +61,7 @@ opens as an idle shell; nothing hits the network until you click):
 ```bash
 # Single Gradio dashboard (also mounted by the API at /)
 uvicorn app.main:app --reload      # dashboard at http://127.0.0.1:8000/
-python -m app.ui                   # or standalone at http://127.0.0.1:7860
+python -m app.ui                   # standalone; open the URL it prints (7860, or 7861 if busy)
 ```
 
 - [ ] The dashboard returns a BUY / HOLD / SELL recommendation with a confidence score, per-agent panels, and a price chart.

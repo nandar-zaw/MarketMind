@@ -8,10 +8,10 @@ the UI needs no external charting library (no Plotly, no Matplotlib).
 Launch on its own from the repo root:
     python -m app.ui
 
-Then open the local URL printed in the terminal (usually
-http://127.0.0.1:7860). The same Blocks object is mounted at ``/`` by
-``app/main.py`` (``app_ui``), so one process can serve both the API and
-this dashboard.
+Then open the URL printed in the terminal. Gradio uses 7860 by default and
+picks the next free port (for example 7861) if that one is busy. The same
+Blocks object is mounted at ``/`` by ``app/main.py`` (``app_ui``), so one
+process can serve both the API and this dashboard.
 """
 
 from __future__ import annotations

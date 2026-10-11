@@ -80,11 +80,13 @@ Then:
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 
-If you only want the dashboard (without uvicorn), run it on its own at http://127.0.0.1:7860:
+If you only want the dashboard (without uvicorn), run it on its own:
 
 ```bash
 python -m app.ui
 ```
+
+Open the URL printed in the terminal. Gradio uses **7860** by default and picks the next free port (for example **7861**) if that one is taken, so trust the printed URL rather than a fixed port.
 
 The price chart is drawn as plain SVG inside Gradio, so the dashboard needs no external charting library (no Plotly, no Matplotlib).
 

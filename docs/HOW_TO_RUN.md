@@ -42,7 +42,9 @@ uvicorn app.main:app --reload
 python -m app.ui
 ```
 
-Open the URL printed in the terminal (usually http://127.0.0.1:7860).
+Open the URL printed in the terminal. Gradio uses **7860** by default and picks
+the next free port (for example **7861**) if that one is busy, so use the URL
+from the terminal — not a fixed port.
 The single dashboard draws its price chart as plain SVG in Gradio HTML, so
 it needs no external charting library (no Plotly, no Matplotlib).
 
