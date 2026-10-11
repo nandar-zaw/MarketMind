@@ -1,12 +1,12 @@
-# 07 — Code Map (paths inside this submission folder)
+# Code Map
 
-All paths are relative to **`submission/`** (this package root).
+Paths are relative to the **repository root**.
 
 ## Entry points
 
 | Path | Role |
 | --- | --- |
-| `app/main.py` | FastAPI: `/health`, `/analyze/{ticker}` |
+| `app/main.py` | FastAPI: `/health`, `/analyze/{ticker}`, Gradio mounted at `/` |
 | `app/ui.py` | Gradio dashboard (Plotly charts) |
 | `app/ui_gradio_only.py` | Gradio dashboard (SVG charts, no Plotly) |
 
@@ -15,10 +15,10 @@ All paths are relative to **`submission/`** (this package root).
 | Path | Role |
 | --- | --- |
 | `app/agents/coordinator_agent.py` | Orchestrator; parallel specialists; final blend |
-| `app/agents/data_agent.py` | Shared data fetch (prices, fundamentals, news) |
+| `app/agents/data_agent.py` | Shared data fetch (prices, news, filings) |
 | `app/agents/technical_agent.py` | RSI / SMA / MACD votes |
-| `app/agents/sentiment_agent.py` | News sentiment (LLM or keyword) |
-| `app/agents/fundamental_agent.py` | Scores `FundamentalSnapshot` |
+| `app/agents/sentiment_agent.py` | News sentiment (LLM) |
+| `app/agents/fundamental_agent.py` | SEC filing excerpts (LLM) |
 | `app/agents/risk_agent.py` | Volatility / drawdown → low/medium/high |
 | `app/agents/base_agent.py` | Shared agent interface |
 
@@ -33,15 +33,16 @@ All paths are relative to **`submission/`** (this package root).
 
 | Path | Role |
 | --- | --- |
-| `app/services/market_data.py` | yfinance OHLCV + `.info` fundamentals |
+| `app/services/market_data.py` | yfinance OHLCV + company info |
 | `app/services/news_data.py` | yfinance news headlines |
+| `app/services/filings_data.py` | SEC filing excerpts (vector store) |
 
-## Symbol helpers
+## Helpers
 
 | Path | Role |
 | --- | --- |
-| `app/utils/symbols.py` | `SPY` default + aliases (`^GSPC`, `SP`, …) |
-| `app/utils/helpers.py` | `normalize_ticker` |
+| `app/utils/helpers.py` | `normalize_ticker` (incl. S&P aliases → SPY) |
+| `app/utils/symbols.py` | `SPY` / alias constants |
 
 ## Tests (representative)
 
@@ -49,7 +50,7 @@ All paths are relative to **`submission/`** (this package root).
 | --- | --- |
 | `tests/test_agents.py` | Coordinator / guardrail behavior |
 | `tests/test_data_agent.py` | DataAgent (mocked) |
-| `tests/test_ui_chart.py` | Chart helpers |
+| `tests/test_guardrails.py` | Guardrail rules |
 | `tests/test_symbols.py` | Alias resolution |
 
 ## Parallel specialists (talking point)

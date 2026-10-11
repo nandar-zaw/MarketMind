@@ -81,4 +81,4 @@ Dashboard
 Final testing and presentation
 
 - See [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md)
-- Professor hand-in package: [`../submission/`](../submission/)
+- Overview / run guide / code map: [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md), [`HOW_TO_RUN.md`](HOW_TO_RUN.md), [`CODE_MAP.md`](CODE_MAP.md)

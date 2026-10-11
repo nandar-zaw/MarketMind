@@ -26,7 +26,7 @@ The rule that shapes the codebase: **specialist agents never fetch data themselv
 
 The two LLM agents run on the OpenAI Agents SDK (`gpt-4o-mini`). Prices and headlines come from Yahoo Finance through yfinance; the news feed uses `yf.Search` because `Ticker.news` kept coming back empty. Filings live in an OpenAI vector store named `marketmind-fundamentals` (more on that below).
 
-More detail, if you want it: [docs/AGENTS.md](docs/AGENTS.md) describes each agent, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) keeps the original design notes. This README is the one we keep current.
+More detail, if you want it: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) is a one-page summary, [docs/AGENTS.md](docs/AGENTS.md) describes each agent, [docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md](docs/PRESENTATION_AGENTS_AND_GUARDRAILS.md) is the class talk track, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) keeps the design notes. This README is the one we keep current.
 
 ## The agents
 
