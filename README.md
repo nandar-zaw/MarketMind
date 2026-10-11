@@ -68,13 +68,24 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-cp .env.example .env   # then put your keys in .env, see below
+cp .env.example .env   # then open .env and fill it in, see below
 ```
 
-`.env` needs two values. Without them the app still runs, but the LLM agents report `unavailable`:
+`.env` needs two values:
 
 - `OPENAI_API_KEY` for the Sentiment and Fundamental agents
 - `FUNDAMENTALS_VECTOR_STORE_ID` for the SEC filings store
+
+Open the new `.env` in any editor and paste your values after the `=` signs (do not leave quotes or spaces around them):
+
+```dotenv
+OPENAI_API_KEY=sk-proj-...your-key...
+FUNDAMENTALS_VECTOR_STORE_ID=vs_...your-store-id...
+```
+
+Get the key from the OpenAI dashboard at http://platform.openai.com/api-keys (create one if you do not have it). `FUNDAMENTALS_VECTOR_STORE_ID` is the ID of a vector store that holds the SEC filing PDFs; you can see your stores under **Storage → Vector stores** in the same dashboard.
+
+Without these values the app still runs, but the two LLM agents (Sentiment and Fundamental) report `unavailable` and the pipeline continues with Technical + Risk.
 
 Start everything (API plus dashboard) with:
 
