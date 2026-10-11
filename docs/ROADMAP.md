@@ -89,4 +89,5 @@ Dashboard
 Final testing and presentation
 
 - See [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md)
-- Overview / run guide / code map: [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md), [`HOW_TO_RUN.md`](HOW_TO_RUN.md), [`CODE_MAP.md`](CODE_MAP.md)
+- Overview / code map: [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md), [`CODE_MAP.md`](CODE_MAP.md)
+- Local setup and demo commands: the root [`README.md`](../README.md)

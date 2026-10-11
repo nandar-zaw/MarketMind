@@ -54,7 +54,7 @@ Hard fails stop the run (API 400). Soft policies rewrite and continue.
 
 ## How to run
 
-See the root [`README.md`](../README.md) and [`HOW_TO_RUN.md`](HOW_TO_RUN.md).
+See the root [`README.md`](../README.md) (local setup and demo commands).
 
 ## Key code entry points
 

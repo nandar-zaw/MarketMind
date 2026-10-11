@@ -48,7 +48,7 @@ For any other ticker the Fundamental Agent simply reports `unavailable` and the 
 
 ## Running it locally
 
-You need Python 3.11 (that is what `.python-version` pins and what we develop on).
+Work from the repository root (the folder with `app/`, `tests/`, and `requirements.txt`). You need Python 3.11 (that is what `.python-version` pins and what we develop on) plus internet access for Yahoo Finance.
 
 ```bash
 python -m venv .venv

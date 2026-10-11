@@ -5,7 +5,6 @@ Quick index for course demos and the final presentation.
 | Document | Use it for |
 | --- | --- |
 | [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) | One-page project summary |
-| [`HOW_TO_RUN.md`](HOW_TO_RUN.md) | Local setup and demo commands |
 | [`SUBMISSION_CHECKLIST.md`](SUBMISSION_CHECKLIST.md) | Pre-hand-in safety and demo checklist |
 | [`PRESENTATION_AGENTS_AND_GUARDRAILS.md`](PRESENTATION_AGENTS_AND_GUARDRAILS.md) | Slide / talk script (best for class) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | System diagrams and request flow |
@@ -15,4 +14,4 @@ Quick index for course demos and the final presentation.
 | [`TECHNICAL_AGENT.md`](TECHNICAL_AGENT.md) | RSI / SMA / MACD notes |
 | [`ROADMAP.md`](ROADMAP.md) | Phase checklist |
 
-How to run the app: see also the root [`README.md`](../README.md).
+How to run the app: see the root [`README.md`](../README.md) ("Running it locally").
