@@ -334,3 +334,36 @@ def test_analyze_endpoint_returns_recommendation(monkeypatch):
     assert body["recommendation"] in {"BUY", "HOLD", "SELL"}
     assert "guardrails" in body
     assert len(body["agent_results"]) >= 4
+
+
+def test_coordinator_run_returns_shared_data_for_ui_charts():
+    # The UI reuses this DataAgentResult for charts/header, so run() must
+    # hand back the exact same object the agents consumed (no second fetch).
+    data_agent = FakeDataAgent()
+    coordinator = CoordinatorAgent(data_agent=data_agent)
+    final, data = asyncio.run(coordinator.run("AAPL", horizon_days=5))
+    assert data_agent.calls == 1
+    assert data.ticker == "AAPL"
+    assert final.ticker == "AAPL"
+    assert final.recommendation in {"BUY", "HOLD", "SELL"}
+    assert len(data.price_history) >= 1
+
+
+def test_risk_agent_failure_degrades_to_unavailable_not_a_crash():
+    class BrokenRisk(BaseAgent):
+        name = "risk_agent"
+
+        async def analyze(self, ticker, **kwargs):
+            raise RuntimeError("risk math exploded")
+
+    coordinator = CoordinatorAgent(
+        data_agent=FakeDataAgent(),
+        risk_agent=BrokenRisk(),
+    )
+    result = asyncio.run(coordinator.analyze("AAPL"))
+    risk = next(r for r in result.agent_results if r.agent_name == "risk_agent")
+    assert risk.signal == "unavailable"
+    assert "RuntimeError" in risk.explanation
+    # The decision still renders; guardrails still enforce the contract.
+    assert result.recommendation in {"BUY", "HOLD", "SELL"}
+    assert any(event.kind == "output" for event in result.guardrails)

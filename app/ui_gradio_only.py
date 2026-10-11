@@ -14,7 +14,6 @@ http://127.0.0.1:7860).
 
 from __future__ import annotations
 
-import asyncio
 import html
 import os
 from datetime import datetime, time
@@ -756,12 +755,12 @@ def _pipeline_html(
   <div class="mm-pipe-icon">DA</div>
   <div>
     <div class="mm-pipe-name">Data</div>
-    <div class="mm-pipe-role">{data.records_count} daily bars · {len(data.news)} headlines · fundamentals {"✓" if data.fundamentals else "—"}</div>
+    <div class="mm-pipe-role">{data.records_count} daily bars · {len(data.news)} headlines · SEC filings {"✓" if data.filings else "—"}</div>
   </div>
   <div class="mm-pipe-right"><span class="mm-pill ok">Loaded</span></div>
 </div>"""
     else:
-        data_row = _pipe_row("DA", "Data", "Prices · fundamentals · news", "Idle", "", None)
+        data_row = _pipe_row("DA", "Data", "Prices · news · SEC filings", "Idle", "", None)
 
     rows = [data_row]
     for name, title, role in _SPECIALISTS:
@@ -808,10 +807,9 @@ def _snapshot_html(data: DataAgentResult) -> str:
     d5 = _pct_change(closes, 5)
     m1 = _pct_change(closes, 21)
 
-    fund = data.fundamentals
     year = closes[-252:]
-    hi = (fund.fifty_two_week_high if fund else None) or max(year)
-    lo = (fund.fifty_two_week_low if fund else None) or min(year)
+    hi = max(year)
+    lo = min(year)
     pos = (last - lo) / (hi - lo) if hi > lo else 0.5
     pos = max(0.0, min(1.0, pos))
     range_bar = f'<div class="mm-range"><span style="left:{pos * 100:.0f}%"></span></div>'
@@ -819,11 +817,8 @@ def _snapshot_html(data: DataAgentResult) -> str:
     returns = pd.Series(closes).pct_change().dropna()
     annual_vol = float(returns.std(ddof=1)) * (252 ** 0.5) if len(returns) > 1 else None
 
-    pe = fund.trailing_pe if fund else None
-    dy = fund.dividend_yield if fund else None
-    if dy is not None and dy > 1:
-        dy = dy / 100.0
-    dy_text = f"Yield {dy:.2%}" if dy is not None else "Yield —"
+    filings = getattr(data, "filings", None) or []
+    filings_text = f"{len(filings)} excerpts" if filings else "none retrieved"
 
     tiles = [
         _kpi("1-day", _format_pct(d1), "vs prior close", _direction(d1)),
@@ -840,7 +835,7 @@ def _snapshot_html(data: DataAgentResult) -> str:
             "—" if annual_vol is None else f"{annual_vol:.1%}",
             "from daily returns",
         ),
-        _kpi("Trailing P/E", _format_number(pe, 1), dy_text),
+        _kpi("SEC filings", str(len(filings)), filings_text),
     ]
     return f'<div class="mm-kpis">{"".join(tiles)}</div>'
 
@@ -854,7 +849,7 @@ def _idle_snapshot() -> str:
             ("1-month", "21 trading days"),
             ("52-week range", "position in range"),
             ("Annual volatility", "from daily returns"),
-            ("Trailing P/E", "Yield —"),
+            ("SEC filings", "fundamental input"),
         )
     ]
     return f'<div class="mm-kpis">{"".join(tiles)}</div>'
@@ -1292,10 +1287,16 @@ def _api_footer_html() -> str:
         (
             "Yahoo Finance · yfinance",
             '<span class="mm-pill pos">Active</span>',
-            "Daily &amp; 5-minute OHLCV prices, fund metadata, fundamental metrics, and news headlines.",
-            "DataAgent → Technical, Sentiment, Fundamental, Risk, chart",
+            "Daily &amp; 5-minute OHLCV prices, fund metadata, and news headlines.",
+            "DataAgent → Technical, Sentiment, Risk, chart",
         ),
-        ("OpenAI API", openai_pill, openai_use, "Sentiment agent"),
+        (
+            "OpenAI vector store",
+            '<span class="mm-pill mid">Optional</span>',
+            "SEC 10-K / 10-Q filing excerpts for the Fundamental agent.",
+            "FUNDAMENTALS_VECTOR_STORE_ID",
+        ),
+        ("OpenAI API", openai_pill, openai_use, "Sentiment + Fundamental agents"),
         (
             "FastAPI",
             '<span class="mm-pill ok">Service</span>',
@@ -1322,7 +1323,7 @@ def _api_footer_html() -> str:
 <div class="mm-footer">
   <div class="mm-section-head">
     <div class="mm-section-title">APIs &amp; data sources</div>
-    <div class="mm-card-sub">Default symbol <b>{html.escape(SP500_SYMBOL)}</b> · pick any supported ticker in the control panel · no SEC file storage required</div>
+    <div class="mm-card-sub">Default symbol <b>{html.escape(SP500_SYMBOL)}</b> · pick any supported ticker in the control panel · SEC filing excerpts power the Fundamental agent</div>
   </div>
   <div class="mm-sources">{cards}</div>
   <div class="mm-legal">
@@ -1352,10 +1353,9 @@ async def analyze(ticker: str, horizon_days: int, chart_window: str):
     window = chart_window or "1Y"
     symbol = resolve_market_symbol(ticker or SP500_SYMBOL)
     try:
-        final, data = await asyncio.gather(
-            _coordinator.analyze(symbol, horizon_days=int(horizon_days)),
-            _data_agent.analyze(symbol),
-        )
+        # One Coordinator call returns both the decision and the shared
+        # market data, so the daily chart needs no second DataAgent fetch.
+        final, data = await _coordinator.run(symbol, horizon_days=int(horizon_days))
         daily_frame = build_price_frame(data)
         try:
             intraday_raw = _data_agent.market_data.get_intraday_ohlcv(symbol)

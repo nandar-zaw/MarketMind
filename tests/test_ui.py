@@ -88,28 +88,28 @@ def _data(ticker="AAPL", n=60):
     )
 
 
+_UNSET = object()
+
+
+_UNSET = object()
+
+
 class FakeCoordinator:
+    """Returns the decision plus the shared market data (one fetch)."""
+
+    def __init__(self, data=_UNSET):
+        self._data = _data() if data is _UNSET else data
+
     async def analyze(self, ticker, horizon_days=5):
         return _final(ticker.upper())
 
-
-class FakeDataAgent:
-    def __init__(self, n=60):
-        self._n = n
-
-    async def analyze(self, ticker):
-        return _data(ticker.upper(), n=self._n)
-
-
-class BoomDataAgent:
-    async def analyze(self, ticker):
-        raise RuntimeError("provider down")
+    async def run(self, ticker, horizon_days=5):
+        return _final(ticker.upper()), self._data
 
 
 @pytest.fixture(autouse=True)
 def _inject_fakes(monkeypatch):
     monkeypatch.setattr(ui, "_coordinator", FakeCoordinator())
-    monkeypatch.setattr(ui, "_data_agent", FakeDataAgent())
 
 
 def test_analyze_fills_panels_chart_and_company():
@@ -138,8 +138,10 @@ def test_analyze_fills_panels_chart_and_company():
     assert "$3.20T" in out[16]
 
 
-def test_visual_failure_keeps_recommendation_panels(monkeypatch):
-    monkeypatch.setattr(ui, "_data_agent", BoomDataAgent())
+def test_missing_market_data_keeps_recommendation_panels(monkeypatch):
+    # The Coordinator succeeded but returned no shared data (fetch degraded):
+    # the recommendation still renders, only chart/header are empty.
+    monkeypatch.setattr(ui, "_coordinator", FakeCoordinator(data=None))
     out = asyncio.run(ui.analyze("AAPL", 5))
     assert out[0] == "🟢 BUY"
     assert out[15] is None
@@ -152,6 +154,9 @@ def test_coordinator_failure_surfaces_error_not_crash(monkeypatch):
         async def analyze(self, ticker, horizon_days=5):
             raise RuntimeError("kaboom")
 
+        async def run(self, ticker, horizon_days=5):
+            raise RuntimeError("kaboom")
+
     monkeypatch.setattr(ui, "_coordinator", BoomCoordinator())
     out = asyncio.run(ui.analyze("AAPL", 5))
     assert len(out) == 18
@@ -160,14 +165,18 @@ def test_coordinator_failure_surfaces_error_not_crash(monkeypatch):
     assert out[17] is None
 
 
-def test_dashboard_runs_analysis_on_load():
-    # The page must open populated: a load event runs analyze with
-    # the ticker + horizon + window inputs and fills every output.
+def test_dashboard_opens_idle_then_analyzes_on_click():
+    # The page must open as an idle shell: a load event renders placeholders
+    # with no inputs, so an open tab never burns API quota. The Analyze
+    # button is the only path that runs the full pipeline.
     deps = ui.demo.get_config_file()["dependencies"]
     loads = [d for d in deps if any(t[1] == "load" for t in d["targets"])]
-    assert loads, "expected a page-load analysis to be wired"
-    assert len(loads[0]["inputs"]) == 3
+    assert loads, "expected an idle page-load handler to be wired"
+    assert not loads[0].get("inputs")
     assert len(loads[0]["outputs"]) == 18
+
+    clicks = [d for d in deps if any(t[1] == "click" for t in d["targets"])]
+    assert any(len(d["inputs"]) == 3 and len(d["outputs"]) == 18 for d in clicks)
 
 
 def test_chart_window_filters_loaded_frame():
@@ -198,7 +207,7 @@ def test_chart_frame_uses_weekly_points():
 
 
 def test_analyze_respects_selected_window(monkeypatch):
-    monkeypatch.setattr(ui, "_data_agent", FakeDataAgent(n=400))
+    monkeypatch.setattr(ui, "_coordinator", FakeCoordinator(data=_data(n=400)))
     out = asyncio.run(ui.analyze("AAPL", 5, window="3M"))
     # Plot shows the filtered slice; state keeps the full frame.
     assert len(out[15]) < len(out[17])

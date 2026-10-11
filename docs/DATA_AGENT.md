@@ -12,13 +12,14 @@ Coordinator.
 
 ## 1. Purpose
 
-Given a market symbol such as `SPY` (S&P 500 ETF proxy), the DataAgent:
+Given a market symbol such as `AAPL`, the DataAgent:
 
 - downloads historical OHLCV prices (Open, High, Low, Close, Volume)
 - collects basic company / fund information
-- collects **fundamental metrics** (`FundamentalSnapshot` via yfinance `.info`)
+- retrieves **SEC filing evidence** (10-K / 10-Q excerpts) from the project's
+  OpenAI vector store via `FilingsDataService`
 - fetches recent **news headlines** (`NewsDataService` / yfinance)
-- validates and cleans the data
+- validates, cleans, and degrades gracefully on partial failures
 - returns structured Pydantic models for the other agents
 
 Default lookback is approximately **one year**.
@@ -33,19 +34,24 @@ User / Coordinator
         v
    DataAgent (async analyze)
         |
-        +--> MarketDataService  --> yfinance  (prices, info, fundamentals)
+        +--> MarketDataService  --> yfinance   (prices + company info)
         |
-        +--> NewsDataService    --> yfinance  (headlines)
+        +--> NewsDataService    --> yfinance   (headlines)
+        |
+        +--> FilingsDataService --> OpenAI vector store (SEC filing excerpts)
 ```
 
 Why this shape:
 
 - **DataAgent** owns the "collect data and return a structured result" job.
-- **MarketDataService** / **NewsDataService** isolate external provider calls,
-  so yfinance can be replaced later without touching the agent.
-- This keeps the agent small and the provider swappable.
+- The services isolate external provider calls, so yfinance / the vector store
+  can be replaced later without touching the agent.
+- This keeps the agent small and the providers swappable.
 - The Coordinator loads DataAgent **once**, then shares the result with
   Technical, Sentiment, and Fundamental (in parallel).
+- The Fundamental Agent never calls the vector store itself: it receives the
+  excerpts through `DataAgentResult.filings` (RAG data supply lives in the
+  data layer).
 
 ---
 
@@ -56,10 +62,11 @@ Why this shape:
 | `app/agents/data_agent.py` | `DataAgent` — the agent entry point (`analyze`) |
 | `app/services/market_data.py` | `MarketDataService` — prices + Yahoo `.info` |
 | `app/services/news_data.py` | `NewsDataService` — headlines via yfinance |
-| `app/models/schemas.py` | `MarketPrice`, `CompanyInfo`, `FundamentalSnapshot`, `NewsItem`, `DataAgentResult` |
+| `app/services/filings_data.py` | `FilingsDataService` — SEC filing excerpts (OpenAI vector store) |
+| `app/models/schemas.py` | `MarketPrice`, `CompanyInfo`, `NewsItem`, `FilingExcerpt`, `DataAgentResult` |
 | `app/utils/exceptions.py` | `MarketDataError` |
 | `app/utils/helpers.py` | `normalize_ticker` (uppercase + trim) |
-| `tests/test_data_agent.py` | Mocked unit tests (no network needed) |
+| `tests/test_data_agent.py`, `tests/test_filings_data.py` | Mocked unit tests (no network needed) |
 
 ---
 
@@ -78,19 +85,19 @@ Basic company / fund metadata. Missing fields are `None` instead of crashing.
 
 - `ticker`, `company_name`, `sector`, `industry`, `exchange`, `currency`, `market_cap`
 
-### FundamentalSnapshot
+### NewsItem
 
-Fundamental metrics from a **direct yfinance API call** (not SEC file storage).
+One recent headline for the Sentiment Agent.
 
-Typical fields:
+- `title`, `publisher`, `published`, `summary`
 
-- Valuation: `trailing_pe`, `forward_pe`, `price_to_book`, `price_to_sales`, `dividend_yield`
-- Quality / growth: `profit_margins`, `operating_margins`, `revenue_growth`, `earnings_growth`, `return_on_equity`
-- Balance sheet: `debt_to_equity`, `total_cash`, `total_debt`
-- Market: `beta`, `fifty_two_week_high`, `fifty_two_week_low`
-- ETF-friendly: `quote_type`, `total_assets`, `ytd_return`, `three_year_avg_return`
+### FilingExcerpt
 
-For `SPY`, company income-statement fields are often `None`; ETF fields are filled when Yahoo provides them.
+One retrieved passage from a company's SEC filings (10-K / 10-Q).
+
+- `text` — the retrieved passage
+- `source` — filing file name when known (e.g. `AAPL_10-K.txt`)
+- `score` — retrieval relevance score when provided
 
 ### DataAgentResult
 
@@ -98,11 +105,15 @@ The DataAgent output.
 
 - `ticker`
 - `company_info`
-- `fundamentals` (`FundamentalSnapshot` from the market API)
 - `price_history` (oldest to newest)
-- `news`
+- `news` (`list[NewsItem]`)
+- `filings` (`list[FilingExcerpt]`) — the Fundamental Agent's RAG input
 - `start_date`, `end_date`
 - `records_count`
+
+> There is **no** `fundamentals` field. Earlier drafts used a yfinance
+> `FundamentalSnapshot`; the current design instead gives the Fundamental Agent
+> SEC filing excerpts and lets an LLM reason over them.
 
 ---
 
@@ -113,21 +124,20 @@ import asyncio
 
 from app.agents.data_agent import DataAgent
 
-result = asyncio.run(DataAgent().analyze("SPY"))
+result = asyncio.run(DataAgent().analyze("AAPL"))
 
-print(result.ticker)              # SPY
+print(result.ticker)              # AAPL
 print(result.company_info.company_name)
-print(result.fundamentals.trailing_pe)
-print(result.fundamentals.quote_type)  # often ETF
 print(result.records_count)       # number of OHLCV rows
 print(result.price_history[0])    # first (oldest) bar
 print(result.price_history[-1])   # last (newest) bar
 print(len(result.news))           # recent headlines for Sentiment
+print(len(result.filings))        # SEC filing excerpts for Fundamental
+print(result.filings[0].source)   # source file name, when known
 ```
 
-> Fundamental Agent teammates should read `result.fundamentals` instead of
-> OpenAI file-storage / SEC RAG for the S&P 500 path.
-
+> The Fundamental Agent reads `result.filings`. When the vector store is not
+> configured, `result.filings` is empty and that agent reports `unavailable`.
 
 ### Arguments
 
@@ -140,7 +150,19 @@ print(len(result.news))           # recent headlines for Sentiment
 
 ---
 
-## 6. Future-data protection (`as_of_date`)
+## 6. Configuration
+
+| Env var | Purpose |
+| --- | --- |
+| `FUNDAMENTALS_VECTOR_STORE_ID` | OpenAI vector store holding the SEC filings. Unset → no filing evidence (empty `filings`). |
+| `OPENAI_API_KEY` | Used by the retrieval client and the LLM agents. |
+
+Filings are cached in-process for 30 minutes (like news): filing text does not
+change minute to minute, so repeated analyses skip the retrieval call.
+
+---
+
+## 7. Future-data protection (`as_of_date`)
 
 MarketMind will later evaluate the system on historical data. To avoid leaking
 future information, you can pass an `as_of_date`:
@@ -160,7 +182,7 @@ that is a later phase.
 
 ---
 
-## 7. Data cleaning
+## 8. Data cleaning
 
 The service:
 
@@ -172,7 +194,7 @@ It does **not** compute RSI, MACD, SMA, EMA, Bollinger Bands, or any signals.
 
 ---
 
-## 8. Error handling
+## 9. Error handling
 
 Expected failures raise a single, clear exception: `MarketDataError`.
 
@@ -183,35 +205,38 @@ Examples:
 - malformed dates (must be `YYYY-MM-DD`)
 - provider / network failure
 
-Raw library stack traces are not the normal API surface; provider errors are
-wrapped into `MarketDataError` with a short message.
+**Prices are required; news and filings are supporting data.** If the news
+provider or the vector store fails, the DataAgent logs a warning and continues
+with an empty list rather than failing the whole run. Provider errors for prices
+are wrapped into `MarketDataError` with a short message.
 
 ---
 
-## 9. Logging
+## 10. Logging
 
 The service logs useful, small events:
 
 - ticker requested, and the date range / period
 - number of records retrieved
+- how many filing excerpts were fetched (or that the store is unset)
 - provider failures
 
 It does **not** log full DataFrames or environment details.
 
 ---
 
-## 10. Async note
+## 11. Async note
 
-`yfinance` is a synchronous library. `DataAgent.analyze` stays `async` to match
-the shared `BaseAgent` interface, but it calls the synchronous service directly
-(blocking). This is intentional and simple: we do not pretend the calls are
-truly asynchronous. If the app later needs to avoid blocking the event loop,
-that can be handled in one place (for example a thread executor) without
-changing the agent interface.
+`yfinance` is a synchronous library, and the vector-store client is too.
+`DataAgent.analyze` stays `async` to match the shared `BaseAgent` interface,
+but it calls the synchronous services directly (blocking). This is intentional
+and simple: we do not pretend the calls are truly asynchronous. If the app later
+needs to avoid blocking the event loop, that can be handled in one place
+(for example a thread executor) without changing the agent interface.
 
 ---
 
-## 11. Tests
+## 12. Tests
 
 `tests/test_data_agent.py` covers, using mocked provider responses (no network):
 
@@ -222,24 +247,27 @@ changing the agent interface.
 5. empty provider response is handled
 6. `as_of_date` prevents future observations
 7. `DataAgent` returns the expected Pydantic structure
+8. news / filings failures degrade to empty lists instead of raising
+
+`tests/test_filings_data.py` covers the vector-store retrieval path.
 
 Run:
 
 ```bash
-pytest tests/test_data_agent.py
+pytest tests/test_data_agent.py tests/test_filings_data.py
 ```
 
 ---
 
-## 12. Out of scope
+## 13. Out of scope
 
 The DataAgent does **not** implement:
 
 - technical indicators (RSI, SMA, MACD, ...) or trading signals
-- sentiment analysis or news APIs
-- fundamental scoring
+- sentiment analysis or scoring
+- fundamental scoring (it only supplies filing evidence the LLM reasons over)
 - risk scoring
-- ML predictions or LLM calls
+- ML predictions
 - BUY / HOLD / SELL recommendations
 - Coordinator decision logic
 - backtesting engine or dashboard

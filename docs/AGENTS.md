@@ -2,9 +2,10 @@
 
 This document describes each agent in beginner-friendly language.
 
-Phase 1 only defines placeholder classes for some agents.
-The **Data Collector Agent**, **Technical Analysis Agent**, and **Sentiment
-Analysis Agent** are implemented. Risk and Coordinator already run a demo.
+All six agents are implemented and run end-to-end: the **Data Collector
+Agent**, the three specialist voters (**Technical**, **Sentiment**,
+**Fundamental**), the **Risk Manager**, and the **Coordinator** that blends
+their outputs under guardrails.
 
 ---
 

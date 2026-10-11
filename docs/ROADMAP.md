@@ -24,7 +24,9 @@ Real stock price data + Technical Agent
 News + Sentiment Agent
 
 - Headlines via `NewsDataService` (yfinance)
-- LLM scoring when `OPENAI_API_KEY` is set; keyword fallback otherwise
+- LLM scoring grounded on those headlines when `OPENAI_API_KEY` is set
+- Without the key (or with too little coverage) the agent reports
+  `unavailable` and does not vote; there is no keyword fallback
 
 ---
 
@@ -32,8 +34,12 @@ News + Sentiment Agent
 
 Fundamental Agent
 
-- Scores `FundamentalSnapshot` from DataAgent (yfinance `.info`)
-- No SEC file storage required
+- LLM reasoning over SEC 10-K / 10-Q excerpts retrieved by
+  `FilingsDataService` from the OpenAI vector store
+  (`FUNDAMENTALS_VECTOR_STORE_ID`) and passed through
+  `DataAgentResult.filings`
+- No yfinance fundamentals snapshot; without filing evidence the agent
+  reports `unavailable` and does not vote
 
 ---
 
@@ -70,8 +76,10 @@ Simple backtesting
 
 Dashboard
 
-- Gradio UI with Plotly charts (`python -m app.ui`)
-- Alternate Gradio-only SVG UI (`python -m app.ui_gradio_only`)
+- Mounted Gradio UI (`app/ui.py` served by `app/main.py`) using Gradio's
+  native `gr.LinePlot` (`python -m app.ui` or `uvicorn app.main:app`)
+- Alternate Gradio-only SVG UI with no chart library beyond Gradio
+  (`python -m app.ui_gradio_only`)
 - Ticker selector, horizon control, FastAPI `/analyze/{ticker}`
 
 ---

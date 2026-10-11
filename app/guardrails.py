@@ -42,7 +42,7 @@ ALLOWED_SPECIALIST_SIGNALS = {
     "sell",
     "unavailable",
 }
-ALLOWED_RISK_SIGNALS = {"low", "medium", "high"}
+ALLOWED_RISK_SIGNALS = {"low", "medium", "high", "unavailable"}
 ALLOWED_TOOLS = {
     "get_market_data": {"periods": {"3mo", "6mo", "1y"}},
 }

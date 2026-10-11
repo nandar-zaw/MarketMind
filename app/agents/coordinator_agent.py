@@ -81,6 +81,21 @@ class CoordinatorAgent(BaseAgent):
         }
 
     async def analyze(self, ticker: str, horizon_days: int = 5) -> FinalRecommendation:
+        """Coordinate the pipeline and return the guarded final decision."""
+        final, _data = await self.run(ticker, horizon_days=horizon_days)
+        return final
+
+    async def run(
+        self, ticker: str, horizon_days: int = 5
+    ) -> tuple[FinalRecommendation, DataAgentResult]:
+        """
+        Coordinate the pipeline and also return the shared market data.
+
+        UIs use this so charts and headers render from the same
+        DataAgentResult the agents already consumed, instead of a second
+        fetch. ``analyze`` stays the public API for callers that only
+        want the recommendation.
+        """
         guardrails: list[GuardrailEvent] = []
         ticker, input_events = input_guardrail(ticker, horizon_days)
         guardrails.extend(input_events)
@@ -90,11 +105,23 @@ class CoordinatorAgent(BaseAgent):
         guardrails.append(tool_output_guardrail(prices))
 
         specialist_results = await self._collect_specialists(ticker, data)
-        risk_result = await self.risk_agent.analyze(
-            ticker,
-            price_history=prices,
-            agent_results=specialist_results,
-        )
+
+        # Risk is a safety overlay, not a voting specialist: a Risk
+        # failure must degrade to "unavailable" rather than sink the
+        # whole run, exactly like a specialist failure.
+        try:
+            risk_result = await self.risk_agent.analyze(
+                ticker,
+                price_history=prices,
+                agent_results=specialist_results,
+            )
+        except Exception as exc:  # noqa: BLE001 - one broken agent must not crash the run
+            risk_result = _unavailable(
+                "risk_agent",
+                "risk_agent failed "
+                f"({type(exc).__name__}: {exc}); risk review is unavailable, "
+                "so the decision is not risk-adjusted.",
+            )
         risk_result = specialist_output_guardrail(risk_result)
 
         close = _close_series(prices)
@@ -121,7 +148,7 @@ class CoordinatorAgent(BaseAgent):
             guardrails=guardrails,
         )
         final, _ = decision_output_guardrail(draft, risk_signal=risk_result.signal)
-        return final
+        return final, data
 
     async def _load_market_data(
         self, ticker: str, guardrails: list[GuardrailEvent]

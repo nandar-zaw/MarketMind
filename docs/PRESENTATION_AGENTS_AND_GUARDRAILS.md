@@ -2,7 +2,7 @@
 
 A classroom-friendly overview of **what each agent does**, **what guardrails are for**, and **how the system works end-to-end**.
 
-**Focus symbol:** `SPY` (S&P 500 ETF)  
+**Default demo symbol:** `AAPL` (the mounted UI also accepts any ticker; `^GSPC` / `SPX` are normalized to `SPY`)
 **Final output:** `BUY` / `HOLD` / `SELL` + confidence + explanation + per-agent evidence
 
 ---
@@ -33,7 +33,7 @@ Use this diagram first in a presentation: it shows **who talks to whom**, where 
 ```mermaid
 flowchart TB
     subgraph Entry["Entry"]
-        User["User<br/>ticker e.g. SPY"]
+        User["User<br/>ticker e.g. AAPL"]
         UI["FastAPI / Gradio UI"]
     end
 
@@ -49,14 +49,15 @@ flowchart TB
 
     subgraph DataLayer["Shared data (once per request)"]
         Data["Data Collector Agent"]
-        Mkt["yfinance<br/>prices · company · fundamentals"]
+        Mkt["yfinance<br/>prices · company info"]
         News["News headlines"]
+        Store["OpenAI vector store<br/>SEC 10-K / 10-Q excerpts"]
     end
 
     subgraph Specialists["Specialist voters (parallel)"]
         Tech["Technical Agent<br/>RSI · SMA · MACD · trend"]
-        Sent["Sentiment Agent<br/>news mood"]
-        Fund["Fundamental Agent<br/>valuation · growth · quality"]
+        Sent["Sentiment Agent<br/>LLM over news"]
+        Fund["Fundamental Agent<br/>LLM over SEC filings"]
     end
 
     subgraph Overlay["Safety overlay"]
@@ -69,9 +70,10 @@ flowchart TB
     Coord --> TG --> Data
     Data --> Mkt
     Data --> News
+    Data --> Store
     Data -.->|prices| Tech
     Data -.->|news| Sent
-    Data -.->|fundamentals| Fund
+    Data -.->|SEC excerpts| Fund
     Tech --> Coord
     Sent --> Coord
     Fund --> Coord
@@ -113,23 +115,23 @@ flowchart TB
         v           v           v
  +------------+  (once)   +-------------------------------------+
  | 2 TOOL     |---------->|         DATA COLLECTOR AGENT        |
- | GUARDRAIL  |           |  prices · news · fundamentals       |
+ | GUARDRAIL  |           |  prices · news · SEC filing text    |
  +------------+           +------------------+------------------+
                                              | shared result
               +------------------------------+------------------------------+
               |                              |                              |
               v                              v                              v
      +-----------------+          +-----------------+          +-----------------+
-     | TECHNICAL       |          | SENTIMENT       |          | FUNDAMENTAL     |
-     | bullish/neutral |          | bullish/neutral |          | bullish/neutral |
-     | /bearish        |          | /bearish        |          | /bearish        |
+     | TECHNICAL       |          | SENTIMENT (LLM) |          | FUNDAMENTAL(LLM)|
+     | bullish/neutral |          | bullish/neutral |          | buy / hold /    |
+     | /bearish        |          | /bearish        |          | sell            |
      +--------+--------+          +--------+--------+          +--------+--------+
               |                            |                            |
               +----------------------------+----------------------------+
                                            v
                                   +-----------------+
                                   | RISK MANAGER    |  low / medium / high
-                                  | (no BUY/SELL)   |
+                                  | (no BUY/SELL)   |  (or unavailable)
                                   +--------+--------+
                                            v
                                   +-----------------+
@@ -156,7 +158,7 @@ flowchart TB
 ## 3. Pipeline Flow (step-by-step)
 
 ```text
-User (ticker, e.g. SPY)
+User (ticker, e.g. AAPL)
         │
         ▼
    FastAPI / Gradio UI
@@ -169,10 +171,10 @@ User (ticker, e.g. SPY)
         ├─ ② Tool guardrail → Data Agent (fetch once)
         │         └─ Tool-output guardrail (is price data usable?)
         │
-        ├─ ③ Specialists (shared data, independent votes)
+        ├─ ③ Specialists (shared data, independent votes, parallel)
         │         Technical  → bullish / neutral / bearish
         │         Sentiment  → bullish / neutral / bearish
-        │         Fundamental→ bullish / neutral / bearish
+        │         Fundamental→ buy / hold / sell
         │
         ├─ ④ Risk Agent → low / medium / high
         │
@@ -185,8 +187,8 @@ User (ticker, e.g. SPY)
 **Key design choices:**
 
 1. **One job per agent** — easy to explain and debug.
-2. **DataAgent runs once** — prices, news, and fundamentals are shared (no triple fetch).
-3. **Specialists vote independently** — Coordinator blends; Risk can override unsafe BUY.
+2. **DataAgent runs once** — prices, news, and SEC filing excerpts are shared (no triple fetch).
+3. **Specialists vote independently and in parallel** — Coordinator blends; Risk can override unsafe BUY.
 4. **Guardrails leave an audit trail** — every check is logged for the presentation / demo UI.
 
 ---
@@ -198,16 +200,16 @@ User (ticker, e.g. SPY)
 | | |
 | --- | --- |
 | **Job** | Shared market-data source for the whole pipeline |
-| **Does** | Pull OHLCV prices, company info, fundamental metrics, recent news |
+| **Does** | Pull OHLCV prices, company info, recent news, and SEC filing excerpts |
 | **Does not** | Score signals or recommend BUY/HOLD/SELL |
-| **Output** | `DataAgentResult` (prices, news, fundamentals, metadata) |
+| **Output** | `DataAgentResult` (prices, company info, news, filings, metadata) |
 
 **Who uses it:**
 
 - Technical ← `price_history`
 - Sentiment ← `news`
-- Fundamental ← `fundamentals`
-- Risk / Coordinator ← prices (via Coordinator)
+- Fundamental ← `filings` (SEC 10-K / 10-Q excerpts)
+- Risk / Coordinator ← prices
 
 Think of it as the **librarian**: gather facts; do not give opinions.
 
@@ -223,7 +225,7 @@ Think of it as the **librarian**: gather facts; do not give opinions.
 | **Voting** | Each indicator votes +1 / 0 / −1 → score ≥ +2 **bullish**, ≤ −2 **bearish**, else **neutral** |
 | **Output** | `bullish` / `neutral` / `bearish` + confidence + explanation |
 
-Never outputs BUY/HOLD/SELL — only a technical vote for the Coordinator.
+Deterministic math (no LLM). Never outputs BUY/HOLD/SELL — only a technical vote for the Coordinator.
 
 ---
 
@@ -232,12 +234,12 @@ Never outputs BUY/HOLD/SELL — only a technical vote for the Coordinator.
 | | |
 | --- | --- |
 | **Job** | News mood around the ticker |
-| **Input** | Recent headlines from DataAgent (up to ~8; needs ≥ 2) |
-| **How** | With `OPENAI_API_KEY`: LLM scores grounded only on those headlines. Without key / on failure: keyword fallback |
+| **Input** | Recent headlines from DataAgent (up to 8; needs ≥ 2) |
+| **How** | `OPENAI_API_KEY` set → LLM scores grounded only on those headlines (SCORE / EVIDENCE / VERDICT) |
 | **Voting** | Score ≥ +0.33 **bullish**, ≤ −0.33 **bearish**, else **neutral** |
-| **Unavailable** | Too little news → agent does **not** vote (pipeline continues) |
+| **Unavailable** | No API key, too little news, or a model failure → agent does **not** vote |
 
-Headlines are treated as **untrusted data**, never as instructions (anti-injection).
+Headlines are treated as **untrusted data**, never as instructions (anti-injection). There is **no keyword fallback**: without the key the agent reports `unavailable`.
 
 ---
 
@@ -245,13 +247,13 @@ Headlines are treated as **untrusted data**, never as instructions (anti-injecti
 
 | | |
 | --- | --- |
-| **Job** | Valuation / growth / quality from metrics |
-| **Input** | `DataAgentResult.fundamentals` (yfinance snapshot: P/E, growth, margins, debt, ETF returns, …) |
-| **How** | Classroom metric votes (valuation, growth, margins, debt, ETF YTD/3Y, etc.) |
-| **Voting** | Score ≥ +2 **bullish**, ≤ −2 **bearish**, else **neutral** |
-| **Unavailable** | Empty snapshot → no vote |
+| **Job** | Revenue growth, margins, valuation, balance-sheet health, and risk factors |
+| **Input** | `DataAgentResult.filings` — SEC 10-K / 10-Q excerpts retrieved by `FilingsDataService` from the OpenAI vector store (RAG) |
+| **How** | LLM reasons ONLY over the supplied excerpts, citing them (`[1]`); figures not in the excerpts are reported as “not disclosed in retrieved filings” |
+| **Voting** | Score ≥ +0.33 **buy**, ≤ −0.33 **sell**, else **hold** |
+| **Unavailable** | Store not configured, too few excerpts (< 2), missing key, or model failure → no vote |
 
-For the S&P 500 (`SPY`) path, fundamentals come from the **API snapshot**, not SEC file RAG.
+Requires `OPENAI_API_KEY` and `FUNDAMENTALS_VECTOR_STORE_ID`. The agent never queries the store itself — the DataAgent layer supplies the excerpts.
 
 ---
 
@@ -261,11 +263,11 @@ For the S&P 500 (`SPY`) path, fundamentals come from the **API snapshot**, not S
 | --- | --- |
 | **Job** | Safety overlay — “how dangerous is the recent path?” |
 | **Input** | Price history + optional specialist signals (event pressure) |
-| **Measures** | Annualized volatility, max drawdown, 5-day return / latest move |
+| **Measures** | Annualized volatility (last 90 trading days vs a 1-year baseline), max drawdown, 5-day return / latest move |
 | **Output** | `low` / `medium` / `high` + confidence + explanation |
 
 **Critical rule:** Risk never says BUY or SELL.  
-It only classifies risk so the Coordinator (and output guardrail) can protect capital.
+It only classifies risk so the Coordinator (and output guardrail) can protect capital. If Risk fails, it degrades to `unavailable` and the decision is simply not risk-adjusted.
 
 ---
 
@@ -278,6 +280,8 @@ It only classifies risk so the Coordinator (and output guardrail) can protect ca
 | **Horizon** | Default **5 trading days** |
 | **Output** | `FinalRecommendation`: BUY/HOLD/SELL, confidence, explanation, evidence, guardrail events |
 
+`CoordinatorAgent.run()` also returns the shared `DataAgentResult`, so the UIs render charts/headers from the same fetch the agents used.
+
 #### How the blend works
 
 | Agent | Weight |
@@ -287,7 +291,7 @@ It only classifies risk so the Coordinator (and output guardrail) can protect ca
 | Fundamental | 0.20 |
 
 - `unavailable` agents do **not** vote.
-- If Technical is missing, a labeled **5-day return** context can contribute (weight 0.25).
+- If Technical is missing, a labeled **horizon return** context can contribute (weight 0.25).
 - Blended score **> +0.25** → BUY; **< −0.25** → SELL; otherwise HOLD.
 - High risk can force HOLD/SELL and cap confidence.
 - Soft policy: **HIGH risk + BUY → rewritten to HOLD** (output guardrail).
@@ -338,8 +342,8 @@ There are **three layers** (plus specialist schema checks):
 
 | Check | Rule |
 | --- | --- |
-| Allowlist | Only `get_price_history` |
-| Lookback | Days between **20** and **252** |
+| Allowlist | Only `get_market_data` |
+| Lookback | `period` must be one of `3mo`, `6mo`, `1y` |
 | Tool ticker | Valid 1–5 letter ticker |
 | Tool output | Non-empty DataFrame, has `Close`, ≥ **20** rows |
 
@@ -351,7 +355,7 @@ There are **three layers** (plus specialist schema checks):
 
 **Specialist output** (each agent result):
 
-- Allowed signals only (`bullish` / `neutral` / `bearish` / `unavailable`; Risk: `low` / `medium` / `high`)
+- Allowed signals only (`bullish` / `neutral` / `bearish` / `buy` / `hold` / `sell` / `unavailable`; Risk: `low` / `medium` / `high` / `unavailable`)
 - Confidence clipped to **0–1**
 - Explanation required (truncated to 1200 chars)
 
@@ -395,7 +399,7 @@ Coordinator owns the run
 ```
 
 - Specialists **do not call each other**.
-- Failures in specialists degrade to `unavailable` so the pipeline can still finish.
+- Failures in specialists (and Risk) degrade to `unavailable` so the pipeline can still finish.
 - Only Coordinator + decision guardrail set the trading label.
 
 ---
@@ -405,8 +409,8 @@ Coordinator owns the run
 1. **Specialization:** six clear roles; DataAgent has no opinion; Risk has no trade.
 2. **Coordination:** weighted votes, not a single black-box model.
 3. **Safety:** input / tool / output guardrails + HIGH-risk blocks BUY.
-4. **Explainability:** every agent returns a short explanation; UI can show the guardrail log.
-5. **Classroom scope:** 5-day horizon; focus on `SPY`; structured Pydantic outputs.
+4. **Explainability:** every agent returns a short explanation; the UI shows the guardrail log.
+5. **Classroom scope:** 5-day horizon; default demo symbol `AAPL`; structured Pydantic outputs.
 
 ---
 
@@ -417,7 +421,7 @@ Coordinator owns the run
 | Data | “What facts do we have?” | Data only |
 | Technical | “What do the prices say?” | bullish / neutral / bearish |
 | Sentiment | “What does the news say?” | bullish / neutral / bearish |
-| Fundamental | “What do the metrics say?” | bullish / neutral / bearish |
+| Fundamental | “What do the filings say?” | buy / hold / sell |
 | Risk | “How dangerous is this?” | low / medium / high |
 | Coordinator | “So should we BUY, HOLD, or SELL?” | BUY / HOLD / SELL |
 

@@ -39,10 +39,10 @@ uvicorn app.main:app --reload
 ## 3. Dashboard only (either UI)
 
 ```bash
-# Main UI (Plotly charts)
+# Main UI (Gradio LinePlot charts)
 python -m app.ui
 
-# OR Gradio-only UI (SVG charts, no Plotly)
+# OR Gradio-only UI (hand-built SVG charts, no Plotly / Matplotlib)
 python -m app.ui_gradio_only
 ```
 

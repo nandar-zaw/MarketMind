@@ -16,31 +16,31 @@ trail. Teammates never need to touch this file: when a specialist
 starts returning real results instead of "unavailable", its panel
 fills in automatically.
 
-The company header and the price chart come from the DataAgent (the
-same data layer the specialists use) and are best-effort: if that
-fetch fails, the recommendation panels still render.
+The company header and the price chart come from the same DataAgent
+result the specialists already consumed (``CoordinatorAgent.run``),
+so an Analyze click fetches market data once with no duplicate pull.
+Those panels are best-effort: if that fetch fails, the recommendation
+panels still render from the guardrail error.
 
-On page load the dashboard runs one analysis for the default
-ticker, so it opens populated instead of blank. While a run is in
-flight the UI reports staged progress, and the chart window
-(3M / 6M / 1Y) re-filters the already-loaded prices instantly,
-without new data or model calls.
+On page load the dashboard renders an idle shell (no network, no
+model calls). The first Analyze click runs the pipeline; the chart
+window (3M / 6M / 1Y) then re-filters the already-loaded prices
+instantly, without new data or model calls.
 """
 
+import html
 import inspect
 
 import gradio as gr
 import pandas as pd
 
 from app.agents.coordinator_agent import CoordinatorAgent
-from app.agents.data_agent import DataAgent
 from app.models.schemas import AgentResult, DataAgentResult, FinalRecommendation
 
 TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
 HORIZONS = [3, 5, 10]
 
 _coordinator = CoordinatorAgent()
-_data_agent = DataAgent()
 
 _SIGNAL_BADGES = {
     "buy": "🟢 BUY",
@@ -60,13 +60,23 @@ def _badge(signal: str) -> str:
     return _SIGNAL_BADGES.get(signal.strip().lower(), signal.upper())
 
 
+def _escape(value: str) -> str:
+    """Escape untrusted text (news / LLM output) before Markdown rendering.
+
+    Agent explanations and provider strings are quoted as content, so raw
+    HTML or angle brackets they contain must not be interpreted by the
+    browser. Newlines and Markdown syntax are preserved.
+    """
+    return html.escape(value or "", quote=False)
+
+
 def _panel_values(result: AgentResult | None):
     """Format one agent panel (signal, confidence, explanation)."""
     if result is None:
         return "—", "—", "_This agent returned no result._"
     if result.signal.strip().lower() == "unavailable":
-        return _badge(result.signal), "—", result.explanation
-    return _badge(result.signal), f"{result.confidence:.2f}", result.explanation
+        return _badge(result.signal), "—", _escape(result.explanation)
+    return _badge(result.signal), f"{result.confidence:.2f}", _escape(result.explanation)
 
 
 def _guardrail_lines(final: FinalRecommendation) -> str:
@@ -81,7 +91,7 @@ def _guardrail_lines(final: FinalRecommendation) -> str:
         "| --- | --- | --- | --- |",
     ]
     for event in final.guardrails[:8]:
-        detail = event.detail.replace("|", "/")
+        detail = _escape(event.detail).replace("|", "/")
         result = "pass" if event.passed else "FAIL"
         lines.append(f"| {event.kind} | {event.name} | {result} | {detail} |")
     if len(final.guardrails) > 8:
@@ -104,12 +114,12 @@ def _company_markdown(data: DataAgentResult | None) -> str:
     if data is None:
         return ""
     info = data.company_info
-    lines = [f"### {info.company_name or data.ticker} ({data.ticker})"]
+    lines = [f"### {_escape(info.company_name or data.ticker)} ({_escape(data.ticker)})"]
     meta = [part for part in (info.sector, info.industry, info.exchange) if part]
     if info.market_cap:
         meta.append(f"Market cap {_fmt_market_cap(info.market_cap)}")
     if meta:
-        lines.append(" · ".join(meta))
+        lines.append(" · ".join(_escape(part) for part in meta))
     closes = [p.close for p in data.price_history]
     if len(closes) >= 2:
         heads = ["Last close", "1-day change"]
@@ -169,12 +179,16 @@ def _filter_chart(frame, window: str):
     return frame[dates >= cutoff]
 
 
-async def _visual_data(ticker: str) -> DataAgentResult | None:
-    """Best-effort DataAgent pull behind the chart/company header."""
-    try:
-        return await _data_agent.analyze(ticker)
-    except Exception:
-        return None
+def _idle_outputs():
+    """Idle shell: no network and no model calls before the first click."""
+    final = (
+        "—",
+        "—",
+        "_Press **Analyze** to run the technical, sentiment, fundamental, "
+        "and risk agents._",
+    )
+    panel = ("—", "—", "_Waiting for the first analysis._")
+    return (*final, *panel, *panel, *panel, *panel, None, "", None)
 
 
 async def analyze(
@@ -186,19 +200,21 @@ async def analyze(
     """Run the Coordinator once and fill every panel from its result."""
     progress(0.1, desc="Running the agent pipeline (specialists + risk review)…")
     try:
-        final = await _coordinator.analyze(ticker, horizon_days=horizon_days)
+        # One Coordinator call returns both the decision and the shared
+        # market data, so the chart/header need no second DataAgent fetch.
+        final, data = await _coordinator.run(ticker, horizon_days=horizon_days)
     except Exception as exc:  # surface config/API/data errors, not a crash
-        error = ("—", "—", f"⚠️ **{type(exc).__name__}:** {exc}")
+        error = ("—", "—", f"⚠️ **{_escape(type(exc).__name__)}:** {_escape(str(exc))}")
         return (*error, *error, *error, *error, *error, None, "", None)
     by_agent = {r.agent_name: r for r in final.agent_results}
     final_values = (
         _badge(final.recommendation),
         f"{final.confidence:.2f}",
-        f"{final.explanation}\n\n_Horizon: {final.horizon_days} trading days._"
+        _escape(final.explanation)
+        + f"\n\n_Horizon: {final.horizon_days} trading days._"
         + _guardrail_lines(final),
     )
     progress(0.8, desc="Building price chart and company header…")
-    data = await _visual_data(final.ticker)
     frame = _chart_frame(data)
     return (
         *final_values,
@@ -347,10 +363,11 @@ with gr.Blocks(title="MarketMind", theme=_THEME, css=_CSS) as demo:
         inputs=all_inputs,
         outputs=all_outputs,
     )
-    # Open populated, not blank: run the default analysis on load.
+    # Open as an idle shell, not blank and not auto-analyzing:
+    # the first Analyze click is the only thing that hits the network.
     demo.load(
-        fn=analyze,
-        inputs=all_inputs,
+        fn=_idle_outputs,
+        inputs=None,
         outputs=all_outputs,
     )
     chart_range.change(

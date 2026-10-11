@@ -49,7 +49,7 @@ Hard fails stop the run (API 400). Soft policies rewrite and continue.
 
 | File | Chart | Command |
 | --- | --- | --- |
-| `app/ui.py` | Plotly | `python -m app.ui` |
+| `app/ui.py` | Gradio native `gr.LinePlot` | `python -m app.ui` |
 | `app/ui_gradio_only.py` | Plain SVG in Gradio HTML | `python -m app.ui_gradio_only` |
 | FastAPI mount | Main dashboard at `/` | `uvicorn app.main:app --reload` |
 

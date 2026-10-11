@@ -3,11 +3,11 @@
 MarketMind is a small multi-agent system that looks at a stock from a few different angles and then argues its way to a single recommendation: BUY, HOLD, or SELL, with a confidence score and the reasoning shown. It was built as a course project for CS529 AI Engineering at Maharishi International University. It is a demo, not financial advice, and nobody should trade on it.
 
 **Live demo:** https://marketmind-1626769ce010.herokuapp.com/
-It runs on a small Heroku dyno that sleeps when idle, so the first load can take a minute. After that it opens with an AAPL analysis already done.
+It runs on a small Heroku dyno that sleeps when idle, so the first load can take a minute. The dashboard opens as an idle shell; click **Analyze** to run the default AAPL pipeline on demand.
 
 ## What happens when you analyze a ticker
 
-You pick a ticker (or type any symbol) and a horizon of 5 or 10 trading days. Four agents then vote:
+You pick a ticker (or type any symbol) and a horizon of 3, 5, or 10 trading days. Four agents then vote:
 
 - The **Technical Agent** reads the price history and scores plain indicators. No LLM is involved.
 - The **Sentiment Agent** gets recent headlines and has an LLM score them, citing each headline it uses.
@@ -22,7 +22,7 @@ If a data source is down or a key is missing, the affected agent reports `unavai
 
 ![MarketMind architecture](docs/images/architecture.png)
 
-The rule that shapes the codebase: **specialist agents never fetch data themselves.** One Data Agent talks to the outside world and hands every specialist the same `DataAgentResult` (prices, company info, headlines, filing excerpts). That keeps the agents easy to test with fixed inputs and means a data problem shows up in exactly one place. The one exception is the Coordinator, which loads prices directly for its risk overlay and the fallback signal.
+The rule that shapes the codebase: **specialist agents never fetch data themselves.** The Coordinator has the Data Agent fetch once and hands every specialist the same `DataAgentResult` (prices, company info, headlines, filing excerpts). That keeps the agents easy to test with fixed inputs and means a data problem shows up in exactly one place. The dashboard reuses that same result for its charts, so one Analyze click never double-fetches.
 
 The two LLM agents run on the OpenAI Agents SDK (`gpt-4o-mini`). Prices and headlines come from Yahoo Finance through yfinance; the news feed uses `yf.Search` because `Ticker.news` kept coming back empty. Filings live in an OpenAI vector store named `marketmind-fundamentals` (more on that below).
 
@@ -79,17 +79,17 @@ uvicorn app.main:app --reload
 
 Then:
 
-- Dashboard: http://127.0.0.1:8000/ (it runs AAPL on open, give it a few seconds)
+- Dashboard: http://127.0.0.1:8000/ (click **Analyze** to run the default AAPL pipeline on demand)
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 
 If you only want the dashboard (without uvicorn), either UI works on its own at http://127.0.0.1:7860:
 
 ```bash
-# Main UI (Plotly charts)
+# Main UI (Gradio native LinePlot chart)
 python -m app.ui
 
-# OR Gradio-only UI (SVG charts, no Plotly)
+# OR Gradio-only UI (SVG chart, no chart library beyond Gradio)
 python -m app.ui_gradio_only
 ```
 
@@ -120,8 +120,8 @@ Production is a single Heroku web dyno. The `Procfile` starts the same FastAPI a
 ```text
 app/
   main.py        FastAPI app, mounts the dashboard at /
-  ui.py          Gradio dashboard (Plotly charts)
-  ui_gradio_only.py  Gradio dashboard (SVG charts, no Plotly)
+  ui.py          Gradio dashboard (Gradio native LinePlot chart)
+  ui_gradio_only.py  Gradio dashboard (SVG chart, no chart library beyond Gradio)
   agents/        Coordinator, Data, Technical, Sentiment, Fundamental, Risk
   services/      yfinance prices and news, SEC filings vector store search
   models/        request/response schemas (AgentResult, DataAgentResult, ...)
@@ -137,7 +137,7 @@ A three-person project. Roughly:
 
 - **Helena Pedro**: Fundamental Agent, Sentiment Agent, Gradio dashboard
 - **Nandar Zaw**: Coordinator, Risk Manager, guardrails
-- **Black Hat**: Data Agent and its services, Technical Agent
+- **Nur**: Data Agent and its services, Technical Agent
 
 ## Known limits
 
