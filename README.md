@@ -2,9 +2,6 @@
 
 MarketMind is a small multi-agent system that looks at a stock from a few different angles and then argues its way to a single recommendation: BUY, HOLD, or SELL, with a confidence score and the reasoning shown. It was built as a course project for CS529 AI Engineering at Maharishi International University. It is a demo, not financial advice, and nobody should trade on it.
 
-**Live demo:** https://marketmind-1626769ce010.herokuapp.com/
-It runs on a small Heroku dyno that sleeps when idle, so the first load can take a minute. The dashboard opens as an idle shell; click **Analyze** to run the default AAPL pipeline on demand.
-
 ## What happens when you analyze a ticker
 
 You pick a ticker (or type any symbol) and a horizon of 3, 5, or 10 trading days. Four agents then vote:
@@ -111,7 +108,9 @@ The suite covers the agents, the data services, the guardrails, and the UI helpe
 
 ## Deployment
 
-Production is a single Heroku web dyno. The `Procfile` starts the same FastAPI app you run locally; the Gradio dashboard is mounted at `/`, so one process serves both the UI and the API. Pushes to the app's git remote deploy the `main` branch, and the two config vars from `.env` (`OPENAI_API_KEY`, `FUNDAMENTALS_VECTOR_STORE_ID`) are set as Heroku config vars.
+The repo ships a `Procfile` (`web: uvicorn app.main:app ...`), so it can be run as a single web process on any host that supports it: the Gradio dashboard is mounted at `/`, so one process serves both the UI and the API. Set `OPENAI_API_KEY` and `FUNDAMENTALS_VECTOR_STORE_ID` as environment variables on that host (the same two values as `.env`).
+
+There is no permanently hosted public demo; run it locally with the commands above, or deploy it yourself.
 
 ## Project layout
 
