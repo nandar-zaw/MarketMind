@@ -2,7 +2,7 @@
 
 A classroom-friendly overview of **what each agent does**, **what guardrails are for**, and **how the system works end-to-end**.
 
-**Default demo symbol:** `AAPL` (the mounted UI also accepts any ticker; `^GSPC` / `SPX` are normalized to `SPY`)
+**Default demo symbol:** `SPY` (the S&P 500 ETF; the UI also accepts any ticker, and `^GSPC` / `SPX` are normalized to `SPY`)
 **Final output:** `BUY` / `HOLD` / `SELL` + confidence + explanation + per-agent evidence
 
 ---
@@ -410,7 +410,7 @@ Coordinator owns the run
 2. **Coordination:** weighted votes, not a single black-box model.
 3. **Safety:** input / tool / output guardrails + HIGH-risk blocks BUY.
 4. **Explainability:** every agent returns a short explanation; the UI shows the guardrail log.
-5. **Classroom scope:** 5-day horizon; default demo symbol `AAPL`; structured Pydantic outputs.
+5. **Classroom scope:** 5-day horizon; default demo symbol `SPY`; structured Pydantic outputs.
 
 ---
 

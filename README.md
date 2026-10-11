@@ -76,7 +76,7 @@ uvicorn app.main:app --reload
 
 Then:
 
-- Dashboard: http://127.0.0.1:8000/ (click **Analyze** to run the default AAPL pipeline on demand)
+- Dashboard: http://127.0.0.1:8000/ (click **Analyze** to run the default SPY (S&P 500) pipeline on demand)
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 

@@ -53,7 +53,7 @@ pytest
 
 - [ ] Expected: **all tests pass** (the suite includes agent, service, guardrail, UI, and API-guard tests).
 
-## 5. Both UIs launch and analyze
+## 5. The dashboard launches and analyzes
 
 Run each command, then open the printed URL and click **Analyze** (the page
 opens as an idle shell; nothing hits the network until you click):
@@ -66,7 +66,7 @@ python -m app.ui                   # standalone; open the URL it prints (7860, o
 
 - [ ] The dashboard returns a BUY / HOLD / SELL recommendation with a confidence score, per-agent panels, and a price chart.
 - [ ] Changing the chart window (1D / 5D / 1M / 3M / 6M / 1Y) re-filters instantly without a new analysis.
-- [ ] Default ticker is `SPY`; `MSFT`, `NVDA`, `TSLA`, `AMZN` have SEC filings in the store.
+- [ ] Default ticker is `SPY` (the S&P 500 ETF); `AAPL`, `MSFT`, `NVDA`, `TSLA`, `AMZN` have SEC filings in the store.
 
 ## 6. Guardrails and API behave as documented
 
@@ -90,7 +90,7 @@ curl -X POST "http://127.0.0.1:8000/analyze/NVDA?horizon_days=10"
 ## 7. Demo day (quick script)
 
 1. `uvicorn app.main:app --reload` → open http://127.0.0.1:8000/.
-2. Click **Analyze** on the default `AAPL`.
+2. Click **Analyze** on the default `SPY`.
 3. Walk through: DataAgent → parallel Technical / Sentiment / Fundamental → Risk → Coordinator blend → output guardrail.
 4. Show the guardrail audit trail at the bottom of the final panel.
 5. Switch the ticker (e.g. `NVDA`) and the horizon, and re-run.

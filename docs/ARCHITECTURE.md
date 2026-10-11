@@ -170,7 +170,7 @@ Analyze click triggers exactly one market-data pull.
 
 ## Request Flow (current)
 
-1. User picks a ticker (mounted UI default `AAPL`) in Gradio, or calls
+1. User picks a ticker (mounted UI default `SPY`) in Gradio, or calls
    `GET`/`POST /analyze/{ticker}` on FastAPI.
 2. **Input guardrail** validates ticker + horizon.
 3. Coordinator asks **DataAgent** once (tool guardrails around the fetch).
