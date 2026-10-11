@@ -4,12 +4,12 @@ MarketMind is a small multi-agent system that looks at a stock from a few differ
 
 ## What happens when you analyze a ticker
 
-You pick a ticker (or type any symbol) and a horizon of 3, 5, or 10 trading days. Four agents then vote:
+You pick a ticker (or type any symbol) and a horizon of 3, 5, or 10 trading days. Three specialists then vote, and the Risk Manager assesses how dangerous the setup is:
 
 - The **Technical Agent** reads the price history and scores plain indicators. No LLM is involved.
 - The **Sentiment Agent** gets recent headlines and has an LLM score them, citing each headline it uses.
 - The **Fundamental Agent** gets excerpts from the company's SEC filings and has an LLM score those, again with citations. When the excerpts do not say something, the agent writes "not disclosed in retrieved filings" instead of guessing.
-- The **Risk Manager** measures volatility, drawdown, and how jumpy the last sessions were.
+- The **Risk Manager** does not vote a direction; it measures volatility, drawdown, and how jumpy the last sessions were, and reports a risk level (low / medium / high).
 
 The **Coordinator** blends the votes (Technical 35%, Sentiment 20%, Fundamental 20%), lets a short-term price signal step in only if the Technical Agent could not run, and applies the risk reading on top: high risk caps the confidence and turns a BUY into a HOLD. Guardrails check the input, the tool calls, and the final output, and every check is written to an audit log you can see in the UI.
 

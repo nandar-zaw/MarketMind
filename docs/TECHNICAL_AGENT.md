@@ -20,8 +20,9 @@ Given historical OHLCV data (usually from DataAgent), the TechnicalAgent:
 - combines the indicator votes into **bullish / neutral / bearish**
 - returns a confidence score and a short human-readable explanation
 
-Course demos often use **`SPY`** as an S&P 500 proxy. The agent itself works
-with whatever OHLCV series DataAgent provides.
+**`SPY`** (the S&P 500 ETF) is MarketMind's default symbol, and the examples
+below use it. The agent itself works with whatever OHLCV series DataAgent
+provides.
 
 ---
 

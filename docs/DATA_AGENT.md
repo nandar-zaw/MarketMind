@@ -12,7 +12,7 @@ Coordinator.
 
 ## 1. Purpose
 
-Given a market symbol such as `AAPL`, the DataAgent:
+Given a market symbol (the examples below use `AAPL`, which has SEC filings in the store), the DataAgent:
 
 - downloads historical OHLCV prices (Open, High, Low, Close, Volume)
 - collects basic company / fund information
@@ -138,6 +138,10 @@ print(result.filings[0].source)   # source file name, when known
 
 > The Fundamental Agent reads `result.filings`. When the vector store is not
 > configured, `result.filings` is empty and that agent reports `unavailable`.
+
+> **Why `AAPL` here?** MarketMind's default demo symbol is `SPY`, but `SPY` is an
+> ETF with no 10-K/10-Q in the store, so `filings` would be empty. `AAPL` is used
+> in these examples so the filing-evidence output is actually illustrated.
 
 ### Arguments
 
